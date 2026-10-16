@@ -27,11 +27,18 @@ export async function executePostToX(params: PostToXParams) {
     if (content.includes('amazon.co.jp') && !content.includes('#PR') && !content.includes('#広告')) {
       throw new Error('【アカバン防止ガード】Amazonアフィリエイトリンクを含む投稿には「#PR」の表記が必須です。');
     }
+  }
 
-    // Length limit for standard tweet
-    if (content.length > 140) {
-      throw new Error(`【文字数オーバー】Xの標準制限140文字を超えています（現在: ${content.length}文字）。`);
-    }
+  // Xの標準仕様: 全角140文字（半角280文字）制限
+  // 1文字でも超過するとX APIが 403 Forbidden ("You are not permitted...") を返すため安全に自動調整
+  let finalContent = content.trim();
+  if (finalContent.length > 138) {
+    console.warn(`[PostToX] Tweet length (${finalContent.length}) exceeds 138. Trimming safely...`);
+    const lines = finalContent.split('\n');
+    const tags = lines.filter(l => l.startsWith('#')).join(' ');
+    const body = lines.filter(l => !l.startsWith('#')).join('\n');
+    const maxBodyLen = 135 - (tags ? tags.length + 1 : 0);
+    finalContent = `${body.slice(0, maxBodyLen)}…\n${tags}`.trim();
   }
 
   // 2. Resolve Twitter API Credentials
@@ -85,8 +92,8 @@ export async function executePostToX(params: PostToXParams) {
   }
 
   const tweet = mediaId
-    ? await client.v2.tweet({ text: content, media: { media_ids: [mediaId] } })
-    : await client.v2.tweet(content);
+    ? await client.v2.tweet({ text: finalContent, media: { media_ids: [mediaId] } })
+    : await client.v2.tweet(finalContent);
 
   return {
     success: true,
