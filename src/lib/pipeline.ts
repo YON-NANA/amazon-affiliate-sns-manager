@@ -12,7 +12,7 @@ export function getCatalogUrls(): {
   rakutenRoom: string;
 } {
   const amazonStorefront = process.env.AMAZON_STOREFRONT_URL?.trim() || 'https://www.amazon.co.jp/shop/yonnanahogo';
-  const rakutenRoom = process.env.RAKUTEN_ROOM_URL?.trim() || 'https://room.rakuten.co.jp/yonnana';
+  const rakutenRoom = process.env.RAKUTEN_ROOM_URL?.trim() || 'https://room.rakuten.co.jp/kurashi_tools_lab/items';
   return { amazonStorefront, rakutenRoom };
 }
 
@@ -406,7 +406,7 @@ async function fetchCandidatesViaGemini(
     if (data.products && Array.isArray(data.products)) {
       return data.products.map((p: any) => ({
         name: p.name || '高評価人気商品',
-        asin: p.asin || 'B0CHYRN43W',
+        asin: p.asin || 'B0C4FH295H',
         price: Number(p.price) || 8900,
         rating: Number(p.rating) || 4.2,
         reviewCount: Number(p.reviewCount) || 300,
@@ -428,7 +428,7 @@ function getFallbackCandidates(genre: 'life' | 'pet', keyword: string): Candidat
     // 1. ポータブル電源・ソーラーパネル（高単価・最優先）
     {
       name: 'Jackery ポータブル電源 1000 Plus リン酸鉄 大容量 1264Wh 定格出力2000W',
-      asin: 'B0CHYRN43W',
+      asin: 'B0C4FH295H',
       price: 168000,
       rating: 4.6,
       reviewCount: 1820,
@@ -438,7 +438,7 @@ function getFallbackCandidates(genre: 'life' | 'pet', keyword: string): Candidat
     },
     {
       name: 'EcoFlow RIVER 2 Pro ポータブル電源 768Wh 急速充電70分 リン酸鉄',
-      asin: 'B0BLH56B6C',
+      asin: 'B0BFKFC9YJ',
       price: 79900,
       rating: 4.5,
       reviewCount: 2450,
@@ -448,7 +448,7 @@ function getFallbackCandidates(genre: 'life' | 'pet', keyword: string): Candidat
     },
     {
       name: 'Anker Solix C1000 ポータブル電源 1056Wh 高出力 急速満充電',
-      asin: 'B0C7KTW890',
+      asin: 'B0CTY9ZJYB',
       price: 99900,
       rating: 4.7,
       reviewCount: 1100,
@@ -460,7 +460,7 @@ function getFallbackCandidates(genre: 'life' | 'pet', keyword: string): Candidat
     // 2. 携帯浄水器・水ろ過器
     {
       name: 'SAWYER PRODUCTS(ソーヤー プロダクト) ソーヤー ミニ SP128 携帯浄水器',
-      asin: 'B00FA2RLX2',
+      asin: 'B00V7X60X0',
       price: 4500,
       rating: 4.6,
       reviewCount: 9800,
@@ -579,8 +579,8 @@ export async function generateAutomatedPost(params: {
   const catalogLabel = isDisasterGear ? 'Amazon防災ストア' : '楽天ROOM';
 
   if (mode === 'harvest' && selectedProduct) {
-    // 【刈り取りモード】: 高単価商品またはカタログ誘導 ＋ #PR
-    const affiliateUrl = buildAffiliateLink(selectedProduct.asin, trackingId);
+    // 【刈り取りモード】: 高単価商品またはカタログ誘導 ＋ #PR（実在ASINなら個別URL、未検証なら404防止の安全検索リンク）
+    const affiliateUrl = buildAffiliateLink(selectedProduct.asin, trackingId, { productName: selectedProduct.name });
 
     // リプライ（ツリー投稿）用テキスト: 140文字の本文に収まらない追加カタログ導線
     const replyText = `🐾 多頭現場で実際に役立っている防災ギア＆消耗品一覧👇\n・Amazon公式防災ストア\n${amazonStorefront}\n・楽天ROOM（消耗品・ポイント派）\n${rakutenRoom} #PR`;

@@ -218,7 +218,7 @@ export const PRESET_PRODUCTS: ProductPreset[] = [
 
   // 防災・高単価ギア（ポータブル電源・ソーラー）
   {
-    asin: 'B0CHYRN43W',
+    asin: 'B0C4FH295H',
     title: 'Jackery ポータブル電源 1000 Plus リン酸鉄 大容量 1264Wh 出力2000W',
     category: 'disaster_prep',
     genre: 'pet',
@@ -232,7 +232,7 @@ export const PRESET_PRODUCTS: ProductPreset[] = [
     suggestedTones: ['problem_solving', 'honest_review'],
   },
   {
-    asin: 'B0BLH56B6C',
+    asin: 'B0BFKFC9YJ',
     title: 'EcoFlow RIVER 2 Pro ポータブル電源 768Wh 急速充電70分 リン酸鉄',
     category: 'disaster_prep',
     genre: 'pet',
@@ -245,10 +245,24 @@ export const PRESET_PRODUCTS: ProductPreset[] = [
     priceRange: '¥79,900前後',
     suggestedTones: ['problem_solving', 'empathy_story'],
   },
+  {
+    asin: 'B0CTY9ZJYB',
+    title: 'Anker Solix C1000 ポータブル電源 1056Wh 高出力 リン酸鉄',
+    category: 'disaster_prep',
+    genre: 'pet',
+    targetAudience: '災害時の電源確保と長寿命を最優先したいペット飼育家庭',
+    benefits: [
+      '超急速充電で停電前の短時間でもフル充電',
+      'ペット用冷暖房家電を複数同時に余裕で稼働',
+      '10年以上使える超長寿命リン酸鉄セル採用',
+    ],
+    priceRange: '¥99,900前後',
+    suggestedTones: ['problem_solving', 'honest_review'],
+  },
 
   // 携帯浄水器・ペット軟水備蓄
   {
-    asin: 'B00FA2RLX2',
+    asin: 'B00V7X60X0',
     title: 'SAWYER PRODUCTS(ソーヤー プロダクト) ソーヤー ミニ SP128 携帯用浄水器',
     category: 'water_purifier',
     genre: 'pet',
