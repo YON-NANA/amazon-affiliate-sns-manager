@@ -14,6 +14,79 @@ export interface PostToXParams {
   };
 }
 
+/**
+ * X (Twitter) 用のテキスト整形・安全ガード
+ * - URL（https://...）はX上で23文字（全角11.5文字分）としてカウントされる
+ * - 最重要パーツ（商品URL、ストアフロントURL、#PR、ハッシュタグ）は絶対に削らず末尾に保持
+ * - 文字数がオーバーした場合のみ、本文（メッセージ部分）だけを適切に短縮して「…」を付与
+ */
+export function formatTweetContent(rawContent: string): string {
+  const content = rawContent.trim();
+  const lines = content.split('\n');
+
+  // 1. URL行（httpを含む行）を抽出
+  const urlLines = lines.filter(l => l.includes('http'));
+  // 2. ハッシュタグ行を抽出
+  const tagLines = lines.filter(l => l.trim().startsWith('#') && !l.includes('http'));
+  // 3. 本文行（URLもタグも含まない行）を抽出
+  const bodyLines = lines.filter(l => !l.includes('http') && !(l.trim().startsWith('#') && !l.includes('http')));
+
+  let bodyText = bodyLines.join('\n').trim();
+  let urlSection = urlLines.join('\n').trim();
+  const tagSection = tagLines.join(' ').trim();
+
+  // URLが含まれていて #PR がない場合は自動付与（ステマ規制ガード）
+  if (urlSection && !urlSection.includes('#PR') && !urlSection.includes('#広告') && !bodyText.includes('#PR')) {
+    urlSection = `${urlSection} #PR`;
+  }
+
+  // 末尾に必ず残すフッター部分（URL + タグ）
+  let footer = '';
+  if (urlSection && tagSection) {
+    footer = `\n\n${urlSection}\n${tagSection}`;
+  } else if (urlSection) {
+    footer = `\n\n${urlSection}`;
+  } else if (tagSection) {
+    footer = `\n\n${tagSection}`;
+  }
+
+  // Xの文字数ウェイト計算（全角2ウェイト、半角1ウェイト、URLは一律23ウェイト）
+  // 上限280ウェイト（全角140文字）
+  const calculateWeight = (text: string) => {
+    // URLを一時的に23文字のダミー文字列に置換してウェイト計算
+    const textWithoutUrls = text.replace(/https?:\/\/[^\s]+/g, 'U'.repeat(23));
+    let weight = 0;
+    for (const char of textWithoutUrls) {
+      const code = char.charCodeAt(0);
+      if (
+        (code >= 0x3000 && code <= 0x9fff) ||
+        (code >= 0xff01 && code <= 0xff60) ||
+        char.match(/[\uD800-\uDBFF][\uDC00-\uDFFF]/) ||
+        code > 0x007f
+      ) {
+        weight += 2;
+      } else {
+        weight += 1;
+      }
+    }
+    return weight;
+  };
+
+  const maxTotalWeight = 270; // 280上限に対して安全マージン10
+  const footerWeight = calculateWeight(footer);
+  const allowedBodyWeight = Math.max(40, maxTotalWeight - footerWeight);
+
+  // 本文が許容ウェイトを超える場合、本文のみを末尾から削る
+  if (calculateWeight(bodyText) > allowedBodyWeight) {
+    while (calculateWeight(bodyText + '…') > allowedBodyWeight && bodyText.length > 0) {
+      bodyText = bodyText.slice(0, -1);
+    }
+    bodyText = bodyText.trim() + '…';
+  }
+
+  return (bodyText + footer).trim();
+}
+
 export async function executePostToX(params: PostToXParams) {
   const { content, isNoLink, mediaPath, mediaUrl, credentials } = params;
 
@@ -29,17 +102,9 @@ export async function executePostToX(params: PostToXParams) {
     }
   }
 
-  // Xの標準仕様: 全角140文字（半角280文字）制限
-  // 1文字でも超過するとX APIが 403 Forbidden ("You are not permitted...") を返すため安全に自動調整
-  let finalContent = content.trim();
-  if (finalContent.length > 138) {
-    console.warn(`[PostToX] Tweet length (${finalContent.length}) exceeds 138. Trimming safely...`);
-    const lines = finalContent.split('\n');
-    const tags = lines.filter(l => l.startsWith('#')).join(' ');
-    const body = lines.filter(l => !l.startsWith('#')).join('\n');
-    const maxBodyLen = 135 - (tags ? tags.length + 1 : 0);
-    finalContent = `${body.slice(0, maxBodyLen)}…\n${tags}`.trim();
-  }
+  // X（Twitter）標準仕様: 全角140文字（280ウェイト）制限
+  // 肝心な「商品URL」「#PR」「ハッシュタグ」が絶対に欠けないよう、本文のみを安全に調整
+  const finalContent = formatTweetContent(content);
 
   // 2. Resolve Twitter API Credentials
   const appKey = credentials?.appKey || process.env.TWITTER_API_KEY || process.env.X_API_KEY;
