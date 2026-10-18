@@ -1,8 +1,16 @@
 {
   "crons": [
     {
-      "path": "/api/pipeline/run-automated?trigger=cron",
-      "schedule": "0 11 * * 0,3,5"
+      "path": "/api/cron/post?trigger=cron&slot=morning",
+      "schedule": "30 22 * * *"
+    },
+    {
+      "path": "/api/cron/post?trigger=cron&slot=noon",
+      "schedule": "15 3 * * *"
+    },
+    {
+      "path": "/api/cron/post?trigger=cron&slot=night",
+      "schedule": "30 11 * * *"
     }
   ]
 }

@@ -1,16 +1,36 @@
 import fs from 'fs';
 import path from 'path';
 import { GoogleGenAI } from '@google/genai';
-import { CandidateProduct, CategoryId, PipelineMode } from './types';
+import { CandidateProduct, CategoryId, PipelineMode, TimeSlot } from './types';
 import { buildAffiliateLink, appendPrDisclosure } from './amazon';
 
 /**
- * 1. 投稿モードの自動判定ロジック（日時判定）
- * 【刈り取りモード】: 水曜・金曜・日曜の夜 (20:00〜23:00台)
- * 【育成モード】: 上記以外（月・火・木・土、および平日の日中など）
+ * ストアフロント及びカタログURLの取得
+ */
+export function getCatalogUrls(): {
+  amazonStorefront: string;
+  rakutenRoom: string;
+} {
+  const amazonStorefront = process.env.AMAZON_STOREFRONT_URL?.trim() || 'https://www.amazon.co.jp/shop/yonnanahogo';
+  const rakutenRoom = process.env.RAKUTEN_ROOM_URL?.trim() || 'https://room.rakuten.co.jp/yonnana';
+  return { amazonStorefront, rakutenRoom };
+}
+
+/**
+ * 1. 投稿モードと時間帯スロットの自動判定ロジック（日本の生活リズム）
+ * - 朝 (6:00〜10:59): 日常の高耐久ケア用品・暮らしの道具（換毛期ブラシ、破れないシーツ、時短掃除）
+ * - 昼 (11:00〜16:59): 現場厳選消耗品・ヘルスケア（消臭スプレー、ペット専用軟水保存水）
+ * - 夜 (17:00〜23:59): ペット防災・命を守る備え（ポータブル電源、ソーラーパネル、携帯浄水器、車中泊避難）
+ * 
+ * 【刈り取りモード】: 水曜・金曜・日曜の夜 (20:00〜23:00台) ＋ 週末の昼
+ * 【育成モード】: 上記以外の日常時間帯（URLなし共感、またはカタログリプライ付き）
  */
 export function checkPipelineMode(date: Date = new Date()): {
   mode: PipelineMode;
+  timeSlot: TimeSlot;
+  timeSlotName: string;
+  themeGenre: string;
+  suggestedKeyword: string;
   reason: string;
   isHarvestTime: boolean;
   dayOfWeek: number; // 0=日, 1=月, ..., 3=水, 5=金
@@ -32,18 +52,35 @@ export function checkPipelineMode(date: Date = new Date()): {
   const dayName = dayNames[dayOfWeek];
   const formattedTime = `${dayName} ${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
 
-  // 刈り取り曜日: 水曜(3), 金曜(5), 日曜(0)
-  const isHarvestDay = dayOfWeek === 0 || dayOfWeek === 3 || dayOfWeek === 5;
-  // 刈り取り時間: 20:00 〜 23:59 (20:00〜23:00台)
-  const isHarvestHour = hour >= 20 && hour <= 23;
+  // 時間帯スロット判定
+  let timeSlot: TimeSlot = 'night';
+  let timeSlotName = '夜（ゴールデンタイム）';
+  let themeGenre = 'ペット防災・命を守る備え（ポータブル電源・ソーラーパネル・携帯浄水器）';
+  let suggestedKeyword = 'ポータブル電源 ソーラーパネル 携帯浄水器 ペット保存水';
 
-  const isHarvestTime = isHarvestDay && isHarvestHour;
+  if (hour >= 6 && hour < 11) {
+    timeSlot = 'morning';
+    timeSlotName = '朝（通勤・朝活スロット）';
+    themeGenre = '日常の高耐久ケア用品・暮らしの道具（破れないペットシーツ・抜け毛対策ブラシ）';
+    suggestedKeyword = '破れないペットシーツ 消臭スプレー 抜け毛ブラシ 猫爪とぎ';
+  } else if (hour >= 11 && hour < 17) {
+    timeSlot = 'noon';
+    timeSlotName = '昼（ランチタイム・休憩スロット）';
+    themeGenre = '現場厳選消耗品・ペットの健康ケア（軟水保存水・無害消臭スプレー・オーガニックケア）';
+    suggestedKeyword = 'ペット用軟水保存水 A2Care除菌消臭 犬猫ヘルスケア';
+  }
+
+  // 刈り取り曜日・時間帯:
+  // - 水曜・金曜・日曜の夜 20:00〜23:59 (購買意欲最高潮)
+  // - 土曜・日曜の昼 12:00〜14:00 (週末ショッピング)
+  const isNightHarvest = (dayOfWeek === 0 || dayOfWeek === 3 || dayOfWeek === 5) && (hour >= 20 && hour <= 23);
+  const isWeekendHarvest = (dayOfWeek === 0 || dayOfWeek === 6) && (hour >= 12 && hour <= 14);
+  const isHarvestTime = isNightHarvest || isWeekendHarvest;
 
   let nextHarvestWindow = '';
   if (isHarvestTime) {
-    nextHarvestWindow = '現在が刈り取りゴールデンタイムです（23:59まで）';
+    nextHarvestWindow = '現在が刈り取りゴールデンタイムです';
   } else {
-    // 次回の刈り取り枠を計算
     if (dayOfWeek === 0 && hour < 20) {
       nextHarvestWindow = '本日（日曜）20:00〜';
     } else if (dayOfWeek < 3 || (dayOfWeek === 3 && hour < 20)) {
@@ -58,7 +95,11 @@ export function checkPipelineMode(date: Date = new Date()): {
   if (isHarvestTime) {
     return {
       mode: 'harvest',
-      reason: `🔥【刈り取りモード】${dayName}夜ゴールデンタイム (${hour}時台)。購買意欲が最高潮のため高単価アソシエイトURL＋#PR付きで投下します。`,
+      timeSlot,
+      timeSlotName,
+      themeGenre,
+      suggestedKeyword,
+      reason: `🔥【刈り取りモード】${timeSlotName} ${formattedTime}。購買意欲が高まる時間帯のため、高単価アイテム・カタログ誘導リンク（#PR）付きで配信します。`,
       isHarvestTime: true,
       dayOfWeek,
       dayName,
@@ -70,7 +111,11 @@ export function checkPipelineMode(date: Date = new Date()): {
 
   return {
     mode: 'nurture',
-    reason: `🌱【育成モード】${formattedTime}。スパム判定・シャドウバンを徹底回避するため、URLなしの純粋な有益知恵袋・共感ノウハウを投下してフォロワーを育成します。`,
+    timeSlot,
+    timeSlotName,
+    themeGenre,
+    suggestedKeyword,
+    reason: `🌱【育成モード】${timeSlotName} ${formattedTime}。スパム判定を回避しファンを育てるため、現場目線のお役立ち知恵袋・共感ノウハウを中心に配信します。`,
     isHarvestTime: false,
     dayOfWeek,
     dayName,
@@ -125,6 +170,15 @@ const BUILTIN_MEDIA_FILES = [
   'スクリーンショット 2026-10-17 054636.jpg',
   'スクリーンショット 2026-10-17 054711.jpg',
   'スクリーンショット 2026-10-17 054807.jpg',
+  'スクリーンショット 2026-10-18 164314.jpg',
+  'スクリーンショット 2026-10-18 165032.jpg',
+  'スクリーンショット 2026-10-18 165214.jpg',
+  'スクリーンショット 2026-10-18 165443.jpg',
+  'スクリーンショット 2026-10-18 165652.jpg',
+  'スクリーンショット 2026-10-18 165946.jpg',
+  'スクリーンショット 2026-10-18 170032.jpg',
+  'スクリーンショット 2026-10-18 170139.jpg',
+  'スクリーンショット 2026-10-18 170711.jpg',
 ];
 
 /**
@@ -483,7 +537,7 @@ function getFallbackCandidates(genre: 'life' | 'pet', keyword: string): Candidat
 }
 
 /**
- * 4. 記事本文の生成（育成モード / 刈り取りモード）
+ * 4. 記事本文と導線URL（個別・カタログ・リプライ用）の生成
  * 【発信者ペルソナ】
  * - 12年間で1,000頭超の犬猫をレスキュー・譲渡してきた動物保護活動の現場経験者
  * - 現在も保護犬20頭・保護猫30頭と共に暮らす、リアルな多頭飼育の実践者
@@ -492,9 +546,14 @@ function getFallbackCandidates(genre: 'life' | 'pet', keyword: string): Candidat
  * - 単なるアフィリエイト紹介ではなく、「命を守る備え」「多頭現場で辿り着いた本当に役立つ知恵・消耗品」
  * - 普段の暮らしに馴染み、災害時にはペットと家族を守る【フェーズフリー】の視点を必ず組み込む
  * - 「ペットがいると避難所に行きづらい（在宅・車中泊避難になりやすい）」という現実に寄り添う共感文
+ * 【アフィリエイト・カタログ導線設計】
+ * - Amazonストアフロント（防災ギア・機材系）: https://www.amazon.co.jp/shop/yonnanahogo
+ * - 楽天ROOM（日用品・消耗品・ポイント派向け）: 設定済みのROOM URL
+ * - 個別商品リンク: PA-API / AmazonアソシエイトURL
  */
 export async function generateAutomatedPost(params: {
   mode: PipelineMode;
+  timeSlot?: TimeSlot;
   genre: 'life' | 'pet';
   selectedProduct?: CandidateProduct;
   trackingId?: string;
@@ -502,42 +561,56 @@ export async function generateAutomatedPost(params: {
 }): Promise<{
   title: string;
   content: string;
+  replyText?: string;
+  catalogUrls: {
+    amazonStorefront: string;
+    rakutenRoom: string;
+    affiliateUrl?: string;
+  };
   affiliateUrl?: string;
   isNoLink: boolean;
 }> {
-  const { mode, genre, selectedProduct, trackingId, apiKey } = params;
+  const { mode, timeSlot = 'night', genre, selectedProduct, trackingId, apiKey } = params;
+  const { amazonStorefront, rakutenRoom } = getCatalogUrls();
+
+  // カテゴリや時間帯に応じた優先カタログの決定
+  const isDisasterGear = selectedProduct?.category === 'disaster_prep' || selectedProduct?.category === 'water_purifier' || timeSlot === 'night';
+  const primaryCatalogUrl = isDisasterGear ? amazonStorefront : rakutenRoom;
+  const catalogLabel = isDisasterGear ? 'Amazon防災ストア' : '楽天ROOM';
 
   if (mode === 'harvest' && selectedProduct) {
-    // 【刈り取りモード】: 高単価商品 ＋ アソシエイトURL ＋ #PR
+    // 【刈り取りモード】: 高単価商品またはカタログ誘導 ＋ #PR
     const affiliateUrl = buildAffiliateLink(selectedProduct.asin, trackingId);
+
+    // リプライ（ツリー投稿）用テキスト: 140文字の本文に収まらない追加カタログ導線
+    const replyText = `🐾 多頭現場で実際に役立っている防災ギア＆消耗品一覧👇\n・Amazon公式防災ストア\n${amazonStorefront}\n・楽天ROOM（消耗品・ポイント派）\n${rakutenRoom} #PR`;
 
     if (apiKey && apiKey !== '【Google AI Studioで取得したGemini APIキー】' && !apiKey.startsWith('your_')) {
       try {
         const ai = new GoogleGenAI({ apiKey });
-        const prompt = `あなたは「12年間で1,000頭超の犬猫をレスキュー・譲渡してきた動物保護活動の現場経験者であり、現在も保護犬20頭・保護猫30頭と暮らしながら被災地の愛護団体取材で電源と水の過酷さを痛感した専門家」です。
-現在【刈り取りゴールデンタイム（購買意欲が最も高い夜間）】のSNS投稿を作成します。
+        const prompt = `あなたは「12年間で1,000頭超の犬猫を保護・譲渡し、保護犬20頭・猫30頭と暮らしながら被災地の電源・水不足を取材してきた動物保護の専門家」です。
+現在、SNS（XおよびThreads）向けの投稿を作成します。
 
-以下の厳選された高単価・最高評価商品について、読者が「これは我が子の命を守るために絶対に必要だ」「日々の生活でも役立つ（フェーズフリー）」と強く納得する、本音の説得力あるSNS投稿文を作成してください。
-
-【選定された商品】
+【商品・テーマ情報】
 - 商品名: ${selectedProduct.name}
 - 参考価格: ¥${selectedProduct.price.toLocaleString()}
-- 星評価: ★${selectedProduct.rating}
-- 主な特徴: ${selectedProduct.benefits.join(' / ')}
+- 特徴: ${selectedProduct.benefits.join(' / ')}
 - ターゲット: ${selectedProduct.targetAudience}
-- アソシエイトURL: ${affiliateUrl}
+- 個別商品URL: ${affiliateUrl}
+- Amazonストアフロント（防災ギア一覧）: ${amazonStorefront}
+- 楽天ROOM（日用品消耗品）: ${rakutenRoom}
 
 【執筆ルール】
-1. 1行目（フック）は保護現場や被災現場のリアルな視点で強烈に引きつけること。
-   （例:「ペットがいると避難所には行けない。だからこそ…」「被災地の取材で痛感したのは、電源と水が止まった瞬間の絶望でした」「保護犬20頭・猫30頭と暮らす現場で、これだけは絶対にケチれない」など）
-2. 単なる商品宣伝ではなく、「普段の暮らしを豊かにしつつ、万が一の災害時はペットの命を守る【フェーズフリー】」の視点を必ず盛り込むこと。
-3. 高単価（¥${selectedProduct.price.toLocaleString()}）に見合う以上の「命と安心の価値」を、多頭飼育やレスキュー現場の実体験のように伝えること。
-4. 本文の末尾には必ず以下の形式で商品リンクと#PRを配置すること：
+1. 1行目のフックは保護現場・被災地取材のリアルな視点で強烈に引きつけること。
+   （例:「ペットがいると避難所には行けない。だからこそ…」「被災地取材で痛感した、電源と水が止まった瞬間の現実」「多頭現場でこれだけはケチれない理由」など）
+2. 「普段の暮らしに馴染み、災害時には命を守る【フェーズフリー】」の視点を必ず盛り込むこと。
+3. Xの標準制限に合わせ、全体で【120文字〜135文字以内】に必ず収めてください（超えるとXで投稿エラーになります）。
+4. 本文末尾には商品リンクと #PR を配置してください：
 👇詳細・セール確認
 ${affiliateUrl} #PR
-5. 文字数: 130〜200文字程度（XでもThreadsでも読みやすい長さ）。ハッシュタグ（#ペット防災 #フェーズフリー #犬のいる暮らし #猫のいる暮らし 等）を2つ添える。
+5. ハッシュタグ（#ペット防災 #フェーズフリー 等）を1〜2個添える。
 
-本文のみを出力してください。解説やタイトルは不要です。`;
+本文のみを出力してください。タイトルや解説は不要です。`;
 
         const res = await ai.models.generateContent({
           model: 'gemini-2.5-flash',
@@ -549,6 +622,12 @@ ${affiliateUrl} #PR
           return {
             title: `【命を守る備え】${selectedProduct.name.slice(0, 30)}...`,
             content: appendPrDisclosure(text),
+            replyText,
+            catalogUrls: {
+              amazonStorefront,
+              rakutenRoom,
+              affiliateUrl,
+            },
             affiliateUrl,
             isNoLink: false,
           };
@@ -558,29 +637,33 @@ ${affiliateUrl} #PR
       }
     }
 
-    // 刈り取りフォールバックテンプレート（新ペルソナ準拠）
-    const benefit1 = selectedProduct.benefits[0] || '普段の暮らしも災害時も命を支えてくれる';
-    const benefit2 = selectedProduct.benefits[1] || '多頭現場で実証済みの頼もしさ';
-    
-    // 商品カテゴリに応じた共感切り口
-    let hook = 'ペットがいると避難所には行きづらい。だからこそ在宅避難の備えは妥協できません。';
+    // 刈り取りフォールバックテンプレート（130文字以内厳守）
+    let hook = 'ペットがいると避難所には行きづらい。だからこそ在宅避難の備えは必須。';
     if (selectedProduct.price >= 50000) {
-      hook = '被災地取材で痛感したのは「電源が落ちたらペットの命が持たない」という過酷な現実。';
+      hook = '被災地取材で痛感したのは「電源が落ちたらペットの命が持たない」過酷な現実。';
     } else if (selectedProduct.name.includes('水') || selectedProduct.name.includes('浄水')) {
-      hook = '断水時に給水車にペットを置いて並べない…被災地の生の声から学んだ命の水対策。';
+      hook = '断水時に給水車にペットを置いて並べない…現場の経験から学んだ水対策。';
     }
 
-    const content = `${hook}🐾\n「${selectedProduct.name}」\n\nお値段（¥${selectedProduct.price.toLocaleString()}）以上に、${benefit1}という安心感が絶大です。${benefit2}なので日常使いにも本当に重宝します✨\n我が子を守るフェーズフリーな備えとして心からおすすめ。\n\n👇詳細・セール確認はこちら\n${affiliateUrl} #PR\n#ペット防災 #フェーズフリー #保護犬保護猫`;
+    const content = `${hook}🐾\n「${selectedProduct.name.slice(0, 24)}」\n日常使いにも重宝するフェーズフリーな備え✨\n\n👇詳細・セール確認\n${affiliateUrl} #PR\n#ペット防災 #フェーズフリー`;
 
     return {
       title: `【命を守る備え】${selectedProduct.name.slice(0, 30)}...`,
       content,
+      replyText,
+      catalogUrls: {
+        amazonStorefront,
+        rakutenRoom,
+        affiliateUrl,
+      },
       affiliateUrl,
       isNoLink: false,
     };
   }
 
-  // 【育成モード】: リンクなし！純粋な有益豆知識・共感ノウハウ（スパム・シャドウバン完全回避）
+  // 【育成モード】: 時間帯ごとの有益ノウハウ（URLなし安全運用、または末尾にリプライ用カタログ用意）
+  const replyText = `🐾 現場で使っている防災機材・愛用品カタログはこちら👇\n・Amazon公式防災ストア: ${amazonStorefront}\n・楽天ROOM（消耗品・ポイント派）: ${rakutenRoom} #PR`;
+
   if (apiKey && apiKey !== '【Google AI Studioで取得したGemini APIキー】' && !apiKey.startsWith('your_')) {
     try {
       const ai = new GoogleGenAI({ apiKey });
@@ -592,7 +675,7 @@ ${affiliateUrl} #PR
 - #PR も不要です。
 - 純粋にフォロワーが増え、保存・リポスト・共感が集まる「命を守るペット防災・在宅避難の知恵」「多頭現場で辿り着いた衛生・換毛期ハック」「断水・停電時のペットケア」を1つ紹介してください。
 - 特に「ペット連れの避難所トラブル・車中泊避難の現実」「犬猫の尿路結石を防ぐ軟水知識」「多頭飼育の臭い・シーツ漏れ対策」など現場経験者ならではのリアルな知恵にしてください。
-- 文字数は120〜180文字程度。最後に読者への共感の問いかけを一言添える。
+- Xの文字数制限に配慮し、必ず【110〜125文字以内】で簡潔にまとめてください。
 
 本文のみを出力してください。`;
 
@@ -606,6 +689,11 @@ ${affiliateUrl} #PR
         return {
           title: '【現場の知恵袋】ペットと命を守る備え・共感ノウハウ',
           content: text,
+          replyText,
+          catalogUrls: {
+            amazonStorefront,
+            rakutenRoom,
+          },
           isNoLink: true,
         };
       }
@@ -626,6 +714,11 @@ ${affiliateUrl} #PR
   return {
     title: '【現場の知恵袋】ペットと命を守る備え・共感ノウハウ',
     content: chosenNurture,
+    replyText,
+    catalogUrls: {
+      amazonStorefront,
+      rakutenRoom,
+    },
     isNoLink: true,
   };
 }

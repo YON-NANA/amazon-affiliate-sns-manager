@@ -118,6 +118,9 @@ export interface DailyTrendIdea {
   sampleSearchUrl: string; // Amazon検索URL
 }
 
+// 生活リズムに合わせた配信時間帯
+export type TimeSlot = 'morning' | 'noon' | 'night';
+
 // 自動化パイプラインの動作モード
 export type PipelineMode = 'harvest' | 'nurture'; // harvest: 刈り取り, nurture: 育成
 
@@ -138,11 +141,18 @@ export interface CandidateProduct {
 export interface AutomatedExecutionResult {
   id: string;
   executedAt: string;
+  timeSlot?: TimeSlot;
   mode: PipelineMode;
   modeReason: string;
   topicTitle: string;
   genre: 'life' | 'pet';
   content: string;
+  replyText?: string; // Xのリプライツリー用テキスト（カタログ・ストアフロント誘導）
+  catalogUrls?: {
+    amazonStorefront?: string;
+    rakutenRoom?: string;
+    affiliateUrl?: string;
+  };
   isNoLink: boolean;
   selectedProduct?: CandidateProduct;
   affiliateUrl?: string;
@@ -155,6 +165,7 @@ export interface AutomatedExecutionResult {
     success: boolean;
     postId?: string;
     postUrl?: string;
+    replyPostId?: string;
     error?: string;
   };
   threadsResult?: {
