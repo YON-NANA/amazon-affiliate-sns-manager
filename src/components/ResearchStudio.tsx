@@ -556,7 +556,7 @@ export function ResearchStudio({ onSavePost, onNavigateToPipeline, defaultRoomUr
 
       {/* Product Results Grid */}
       <div className="space-y-3">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
           <div className="flex items-center gap-2">
             <h3 className="text-sm font-bold text-zinc-900 dark:text-white flex items-center gap-1.5">
               <ShoppingBag className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
@@ -567,7 +567,58 @@ export function ResearchStudio({ onSavePost, onNavigateToPipeline, defaultRoomUr
             </span>
           </div>
 
-          <span className="text-xs text-zinc-500">
+          {/* Quick Link Selector Bar (一覧画面からでもワンタップで事前切替可能) */}
+          <div className="flex items-center gap-1.5 rounded-2xl bg-zinc-100 p-1 dark:bg-zinc-800 border border-zinc-200/60 dark:border-zinc-700/60">
+            <span className="px-2 text-[11px] font-bold text-zinc-500 dark:text-zinc-400">
+              誘導先:
+            </span>
+            <button
+              type="button"
+              onClick={() => handleSwitchLinkOption('amazon_storefront')}
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-xl text-xs font-bold transition ${
+                linkOption === 'amazon_storefront'
+                  ? 'bg-amber-500 text-white shadow-xs'
+                  : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
+              }`}
+              title="Amazonストアフロント（shop/〇〇）へ誘導"
+            >
+              <span>🛒</span>
+              <span>Amazonストアフロント</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleSwitchLinkOption('room')}
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-xl text-xs font-bold transition ${
+                linkOption === 'room'
+                  ? 'bg-emerald-600 text-white shadow-xs'
+                  : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
+              }`}
+              title="楽天ROOMのコレクションへ誘導"
+            >
+              <span>🏠</span>
+              <span>楽天ROOM</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleSwitchLinkOption('direct_rakuten')}
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-xl text-xs font-bold transition ${
+                linkOption === 'direct_rakuten'
+                  ? 'bg-teal-600 text-white shadow-xs'
+                  : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
+              }`}
+              title="楽天商品ページへ直接誘導"
+            >
+              <span>🔗</span>
+              <span>楽天直リンク</span>
+            </button>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between text-xs text-zinc-500">
+          <span>
+            現在の誘導先: <strong className={linkOption === 'amazon_storefront' ? 'text-amber-600' : linkOption === 'room' ? 'text-emerald-600' : 'text-teal-600'}>{linkOption === 'amazon_storefront' ? '🛒 Amazonストアフロント' : linkOption === 'room' ? '🏠 楽天ROOM' : '🔗 楽天アフィリエイト直リンク'}</strong>
+          </span>
+          <span>
             気になる商品の「✨️ この商品でAI作成」を押すと紹介文を即時生成できます
           </span>
         </div>
