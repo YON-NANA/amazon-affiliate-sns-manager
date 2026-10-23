@@ -120,14 +120,21 @@ export async function executeAutomatedPipeline(options: RunAutomatedOptions = {}
     apiKey,
   });
 
+  // ★フェイルセーフ：親ポスト（メイン本文）には絶対にURLや#PRを混入させない
+  // 暴言や規約違反リスクのある単語も確実にサニタイズ
+  const sanitizedMainContent = postData.content
+    .replace(/https?:\/\/[^\s]+/g, '')
+    .replace(/#PR|#pr|PR/g, '')
+    .replace(/しめるぞ|ゴルァ|しばくぞ/g, '勘弁して〜！')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+
   // 4. 写真ストックフォルダ／CDN公開URLからの自動画像選定
   const chosenMedia = selectRandomStockMedia(customMediaDir);
 
-  // 判定: パターンA（直接訴求型） vs パターンB（ノウハウ・ギブ型）
-  // - パターンA: メイン本文に商品リンクを記載（現状のままでOK）
-  // - パターンB: メイン本文にリンクなし ➔ 自動でその投稿のリプライ欄にアフィリエイトリンク・カタログをぶら下げる
-  const isPatternB = postData.isNoLink || !postData.content.includes('http');
-  const shouldPostReply = isPatternB && Boolean(postData.replyText);
+  // 運用ルール徹底：メイン本文にはリンクを置かず（isNoLink: true）、
+  // 100%リプライ欄にアフィリエイトリンク・カタログをぶら下げる
+  const shouldPostReply = Boolean(postData.replyText);
 
   // 5. SNS自動投下（X & Threads）※メイン成功後にリプライを自動投稿
   let xResult: { success: boolean; postId?: string; postUrl?: string; replyPostId?: string; replyError?: string; error?: string } = { success: false };
@@ -141,8 +148,8 @@ export async function executeAutomatedPipeline(options: RunAutomatedOptions = {}
     if (platform === 'both' || platform === 'x') {
       try {
         const xRes = await executePostToX({
-          content: postData.content,
-          isNoLink: postData.isNoLink,
+          content: sanitizedMainContent,
+          isNoLink: true,
           mediaPath: chosenMedia?.absolutePath,
           mediaUrl: chosenMedia?.publicUrl,
         });
@@ -152,7 +159,7 @@ export async function executeAutomatedPipeline(options: RunAutomatedOptions = {}
           postUrl: xRes.tweetUrl,
         };
 
-        // パターンB（ノウハウ・ギブ型）かつメイン投稿成功時: 1〜2秒待機後にリプライをぶら下げる
+        // メイン投稿成功時: 2秒待機後にリプライをぶら下げる
         if (shouldPostReply && xRes.success && xRes.tweetId && postData.replyText) {
           try {
             console.log(`[Pipeline] Waiting 2 seconds before posting reply to tweet ${xRes.tweetId}...`);
@@ -183,8 +190,8 @@ export async function executeAutomatedPipeline(options: RunAutomatedOptions = {}
     if (platform === 'both' || platform === 'threads') {
       try {
         const thRes = await executePostToThreads({
-          content: postData.content,
-          isNoLink: postData.isNoLink,
+          content: sanitizedMainContent,
+          isNoLink: true,
           mediaPath: chosenMedia?.absolutePath,
           imageUrl: chosenMedia?.publicUrl,
         });
@@ -194,7 +201,7 @@ export async function executeAutomatedPipeline(options: RunAutomatedOptions = {}
           postUrl: thRes.postUrl,
         };
 
-        // パターンB（ノウハウ・ギブ型）かつメイン投稿成功時: 1〜2秒待機後にリプライをぶら下げる
+        // メイン投稿成功時: 2秒待機後にリプライをぶら下げる
         if (shouldPostReply && thRes.success && thRes.postId && postData.replyText) {
           try {
             console.log(`[Pipeline] Waiting 2 seconds before posting reply to Threads ${thRes.postId}...`);
