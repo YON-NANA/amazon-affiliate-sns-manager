@@ -7,10 +7,11 @@ export interface PostToThreadsParams {
   isNoLink?: boolean;
   mediaPath?: string;
   imageUrl?: string;
+  replyToId?: string; // 返信先Threads投稿ID（リプライツリー用）
 }
 
 export async function executePostToThreads(params: PostToThreadsParams) {
-  const { content, isNoLink, mediaPath, imageUrl } = params;
+  const { content, isNoLink, mediaPath, imageUrl, replyToId } = params;
 
   if (!content || !content.trim()) {
     throw new Error('投稿本文が空です');
@@ -37,9 +38,12 @@ export async function executePostToThreads(params: PostToThreadsParams) {
     return {
       success: true,
       isSimulated: true,
-      message: '【テスト/シミュレーション成功】Threads APIアクセストークンが未設定のため模擬配信として処理しました。設定すると実際に自動投稿されます。',
+      message: replyToId
+        ? '【テスト/シミュレーション成功】Threads APIキー未設定のためリプライ模擬配信として処理しました。'
+        : '【テスト/シミュレーション成功】Threads APIアクセストークンが未設定のため模擬配信として処理しました。設定すると実際に自動投稿されます。',
       postId: `sim_th_${Date.now()}`,
       postUrl: `https://threads.net/intent/post?text=${encodeURIComponent(content)}`,
+      replyToId: replyToId || null,
     };
   }
 
@@ -55,6 +59,11 @@ export async function executePostToThreads(params: PostToThreadsParams) {
     access_token: accessToken,
     text: content,
   });
+
+  // リプライ投稿の場合は返信先投稿ID（reply_to_id）を付与
+  if (replyToId) {
+    containerParams.append('reply_to_id', replyToId);
+  }
 
   if (publicImageUrl && publicImageUrl.startsWith('https://')) {
     containerParams.append('media_type', 'IMAGE');
@@ -117,9 +126,10 @@ export async function executePostToThreads(params: PostToThreadsParams) {
   return {
     success: true,
     isSimulated: false,
-    message: 'Threadsへの自動投稿に成功しました！',
+    message: replyToId ? 'Threadsへのリプライ投稿に成功しました！' : 'Threadsへの自動投稿に成功しました！',
     postId: publishData.id,
     postUrl: `https://www.threads.net/post/${publishData.id}`,
+    replyToId: replyToId || null,
   };
 }
 

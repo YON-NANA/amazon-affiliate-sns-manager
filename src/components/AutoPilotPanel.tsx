@@ -122,7 +122,11 @@ export function AutoPilotPanel({ trackingId, onPostSuccess }: AutoPilotPanelProp
       await new Promise(r => setTimeout(r, 700));
 
       setCurrentStep(4);
-      setStepMessage('4/4: X (Twitter) および Threads へ画像付きで自動投下中...');
+      setStepMessage(
+        effectiveForceMode === 'harvest' || (effectiveForceMode === undefined && modeInfo?.mode === 'harvest')
+          ? '4/4: X (Twitter) および Threads へ画像付きで直接訴求投稿を投下中...'
+          : '4/4: メイン投稿を投下後、自動でリプライ欄へアフィリエイトリンクをぶら下げ中...'
+      );
 
       const data = await res.json();
 
@@ -552,6 +556,7 @@ export function AutoPilotPanel({ trackingId, onPostSuccess }: AutoPilotPanelProp
           {/* Content & Media Layout */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="md:col-span-2 rounded-2xl bg-zinc-50 p-4 text-xs sm:text-sm leading-relaxed text-zinc-800 dark:bg-zinc-950 dark:text-zinc-200 whitespace-pre-wrap font-sans">
+              <div className="text-[11px] font-bold text-zinc-400 mb-1">【メイン投稿】</div>
               {lastResult.content}
             </div>
 
@@ -568,6 +573,33 @@ export function AutoPilotPanel({ trackingId, onPostSuccess }: AutoPilotPanelProp
               </div>
             )}
           </div>
+
+          {/* Reply Tree Showcase (If Pattern B or reply exists) */}
+          {lastResult.replyText && (lastResult.xResult?.replyPostId || lastResult.threadsResult?.replyPostId || lastResult.isNoLink) && (
+            <div className="rounded-2xl border border-indigo-200 bg-gradient-to-r from-indigo-50/80 to-purple-50/80 p-4 dark:border-indigo-900/50 dark:from-indigo-950/30 dark:to-purple-950/20 space-y-2">
+              <div className="flex items-center justify-between text-xs font-semibold text-indigo-900 dark:text-indigo-200">
+                <span className="flex items-center gap-1.5">
+                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-indigo-600 text-[10px] text-white font-black">↳</span>
+                  <span className="font-bold">自動ぶら下げリプライ（ツリー返信：カタログ・アフィリエイト導線）</span>
+                </span>
+                <div className="flex items-center gap-2">
+                  {lastResult.xResult?.replyPostId && (
+                    <span className="rounded-full bg-zinc-900 px-2.5 py-0.5 text-[10px] font-bold text-white shadow-xs">
+                      𝕏 リプライ投稿済
+                    </span>
+                  )}
+                  {lastResult.threadsResult?.replyPostId && (
+                    <span className="rounded-full bg-gradient-to-r from-purple-600 to-pink-600 px-2.5 py-0.5 text-[10px] font-bold text-white shadow-xs">
+                      Threads リプライ投稿済
+                    </span>
+                  )}
+                </div>
+              </div>
+              <div className="rounded-xl bg-white/90 p-3 text-xs leading-relaxed text-zinc-800 dark:bg-zinc-900/90 dark:text-zinc-200 whitespace-pre-wrap font-sans border border-indigo-100 dark:border-indigo-900/40">
+                {lastResult.replyText}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

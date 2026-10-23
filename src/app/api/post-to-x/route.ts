@@ -6,6 +6,7 @@ export interface PostToXParams {
   isNoLink?: boolean;
   mediaPath?: string; // ローカル画像ファイルパス
   mediaUrl?: string;  // 公開画像URL（Vercel CDN等のHTTPS）
+  replyToTweetId?: string; // リプライ先ツイートID（ツリー投稿用）
   credentials?: {
     appKey?: string;
     appSecret?: string;
@@ -88,7 +89,7 @@ export function formatTweetContent(rawContent: string): string {
 }
 
 export async function executePostToX(params: PostToXParams) {
-  const { content, isNoLink, mediaPath, mediaUrl, credentials } = params;
+  const { content, isNoLink, mediaPath, mediaUrl, replyToTweetId, credentials } = params;
 
   if (!content || !content.trim()) {
     throw new Error('投稿本文が空です');
@@ -117,14 +118,17 @@ export async function executePostToX(params: PostToXParams) {
     return {
       success: true,
       isSimulated: true,
-      message: '【テスト/シミュレーション成功】X APIキーが未設定のため模擬配信として処理しました。キーを設定すると実際に自動投稿されます。',
+      message: replyToTweetId
+        ? '【テスト/シミュレーション成功】X APIキーが未設定のためリプライ模擬配信として処理しました。'
+        : '【テスト/シミュレーション成功】X APIキーが未設定のため模擬配信として処理しました。キーを設定すると実際に自動投稿されます。',
       tweetId: `sim_${Date.now()}`,
       tweetUrl: `https://x.com/intent/tweet?text=${encodeURIComponent(content)}`,
       attachedMediaId: null,
+      inReplyToTweetId: replyToTweetId || null,
     };
   }
 
-  // 3. Post to Twitter via API v2 (with optional media attachment)
+  // 3. Post to Twitter via API v2 (with optional media attachment and reply thread)
   const client = new TwitterApi({
     appKey,
     appSecret,
@@ -156,17 +160,26 @@ export async function executePostToX(params: PostToXParams) {
     console.warn('Failed to upload media to X, falling back to text-only tweet:', mediaError);
   }
 
-  const tweet = mediaId
-    ? await client.v2.tweet({ text: finalContent, media: { media_ids: [mediaId] } })
-    : await client.v2.tweet(finalContent);
+  const tweetPayload: any = { text: finalContent };
+  if (mediaId) {
+    tweetPayload.media = { media_ids: [mediaId] };
+  }
+  if (replyToTweetId) {
+    tweetPayload.reply = { in_reply_to_tweet_id: replyToTweetId };
+  }
+
+  const tweet = await client.v2.tweet(tweetPayload);
 
   return {
     success: true,
     isSimulated: false,
-    message: mediaId ? 'X (Twitter) へ画像付きで自動投稿に成功しました！' : 'X (Twitter) への自動投稿に成功しました！',
+    message: replyToTweetId
+      ? 'X (Twitter) へのリプライ投稿に成功しました！'
+      : (mediaId ? 'X (Twitter) へ画像付きで自動投稿に成功しました！' : 'X (Twitter) への自動投稿に成功しました！'),
     tweetId: tweet.data.id,
     tweetUrl: `https://x.com/i/web/status/${tweet.data.id}`,
     attachedMediaId: mediaId || null,
+    inReplyToTweetId: replyToTweetId || null,
   };
 }
 

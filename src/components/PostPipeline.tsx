@@ -25,7 +25,8 @@ import {
   ArrowRight,
   Send,
   ShieldCheck,
-  Sparkles
+  Sparkles,
+  MessageSquareReply
 } from 'lucide-react';
 import { CATEGORIES } from '@/lib/presets';
 
@@ -95,11 +96,41 @@ export function PostPipeline({
         throw new Error(data.error || 'X APIへの投稿に失敗しました');
       }
 
+      // パターンB（ノウハウ・ギブ型: リンクなし投稿）の場合、メイン投稿後にリプライを自動投稿
+      const isPatternB = post.is_no_link || !post.content.includes('http');
+      let replyTweetId: string | undefined;
+
+      if (isPatternB && data.tweetId) {
+        const replyText =
+          post.reply_content ||
+          `てな訳で、おすすめの神アイテムはコチラ ✨️ｷﾗｯ→\n\n【おすすめペット用品 / 暮らしの神アイテム】\n我が家でも大活躍中。使い勝手も良く耐久性・機能性抜群で、毎日の負担が一気に激減します。\n\n全飼い主に推したい。\n\n🔗 ${post.affiliate_url || 'https://www.amazon.co.jp/shop/yonnanahogo'} ※PR`;
+        await new Promise((r) => setTimeout(r, 2000)); // API反映ラグ防止待機
+        try {
+          const replyRes = await fetch('/api/post-to-x', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              content: replyText,
+              replyToTweetId: data.tweetId,
+              isNoLink: false,
+            }),
+          });
+          const replyData = await replyRes.json();
+          if (replyRes.ok && replyData.tweetId) {
+            replyTweetId = replyData.tweetId;
+          }
+        } catch (reErr) {
+          console.warn('X Reply post failed:', reErr);
+        }
+      }
+
       setApiNotice({
         id: post.id,
         msg: data.isSimulated
           ? '【シミュレーション完了】X API認証キーが未設定のため模擬成功として記録しました。'
-          : '🎉 Xへの自動投稿が完了しました！',
+          : replyTweetId
+            ? '🎉 Xへのメイン投稿およびリプライツリー（返信）の自動ぶら下げが完了しました！'
+            : '🎉 Xへの自動投稿が完了しました！',
       });
 
       // Update post status to published
@@ -139,11 +170,41 @@ export function PostPipeline({
         throw new Error(data.error || 'Threads APIへの投稿に失敗しました');
       }
 
+      // パターンB（ノウハウ・ギブ型: リンクなし投稿）の場合、メイン投稿後にリプライを自動投稿
+      const isPatternB = post.is_no_link || !post.content.includes('http');
+      let replyThreadId: string | undefined;
+
+      if (isPatternB && data.postId) {
+        const replyText =
+          post.reply_content ||
+          `てな訳で、おすすめの神アイテムはコチラ ✨️ｷﾗｯ→\n\n【おすすめペット用品 / 暮らしの神アイテム】\n我が家でも大活躍中。使い勝手も良く耐久性・機能性抜群で、毎日の負担が一気に激減します。\n\n全飼い主に推したい。\n\n🔗 ${post.affiliate_url || 'https://www.amazon.co.jp/shop/yonnanahogo'} ※PR`;
+        await new Promise((r) => setTimeout(r, 2000)); // API反映ラグ防止待機
+        try {
+          const replyRes = await fetch('/api/post-to-threads', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              content: replyText,
+              replyToId: data.postId,
+              isNoLink: false,
+            }),
+          });
+          const replyData = await replyRes.json();
+          if (replyRes.ok && replyData.postId) {
+            replyThreadId = replyData.postId;
+          }
+        } catch (reErr) {
+          console.warn('Threads Reply post failed:', reErr);
+        }
+      }
+
       setApiNotice({
         id: post.id,
         msg: data.isSimulated
           ? '【シミュレーション完了】Threads APIアクセストークンが未設定のため模擬成功として記録しました。'
-          : '🎉 Threadsへの自動投稿が完了しました！',
+          : replyThreadId
+            ? '🎉 Threadsへのメイン投稿およびリプライ（返信）の自動ぶら下げが完了しました！'
+            : '🎉 Threadsへの自動投稿が完了しました！',
       });
 
       await onUpdateStatus(post.id, 'published', {
@@ -353,6 +414,21 @@ export function PostPipeline({
                           🛡️ リンク無し共感
                         </span>
                       )}
+                      {post.affiliate_provider === 'amazon_storefront' && (
+                        <span className="rounded-md bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-900 dark:bg-amber-950 dark:text-amber-300 border border-amber-300">
+                          🛒 Amazonストアフロント
+                        </span>
+                      )}
+                      {post.affiliate_provider === 'room' && (
+                        <span className="rounded-md bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border border-emerald-300">
+                          🏠 楽天ROOM
+                        </span>
+                      )}
+                      {post.affiliate_provider === 'rakuten' && (
+                        <span className="rounded-md bg-teal-100 px-1.5 py-0.5 text-[10px] font-bold text-teal-800 dark:bg-teal-950 dark:text-teal-300 border border-teal-300">
+                          🔗 楽天直リンク
+                        </span>
+                      )}
                     </div>
 
                     {getStatusBadge(post.status)}
@@ -396,6 +472,28 @@ export function PostPipeline({
                         <ExternalLink className="h-3 w-3" />
                         開く
                       </a>
+                    </div>
+                  )}
+
+                  {/* Reply Content Preview (Pattern B) */}
+                  {post.reply_content && (
+                    <div className="mt-2.5 rounded-xl border border-indigo-100 bg-indigo-50/60 p-2.5 dark:border-indigo-900/50 dark:bg-indigo-950/20">
+                      <div className="flex items-center justify-between text-[11px] font-bold text-indigo-800 dark:text-indigo-300">
+                        <span className="flex items-center gap-1">
+                          <MessageSquareReply className="h-3 w-3" />
+                          自動ぶら下げリプライ
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleCopy(`reply_${post.id}`, post.reply_content || '')}
+                          className="flex items-center gap-0.5 text-[10px] text-indigo-600 hover:underline dark:text-indigo-400"
+                        >
+                          {copiedId === `reply_${post.id}` ? 'コピー済' : '返信コピー'}
+                        </button>
+                      </div>
+                      <div className="mt-1 text-[11px] leading-relaxed text-indigo-950 dark:text-indigo-200 whitespace-pre-wrap max-h-28 overflow-y-auto font-sans">
+                        {post.reply_content}
+                      </div>
                     </div>
                   )}
                 </div>

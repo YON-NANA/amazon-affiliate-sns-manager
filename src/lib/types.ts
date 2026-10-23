@@ -10,7 +10,8 @@ export type CategoryId =
   | 'pet_toy'
   | 'disaster_prep'     // 防災・ポータブル電源・ソーラーパネル
   | 'water_purifier'    // 携帯浄水器・ペット配慮長期保存水（軟水）
-  | 'rescue_supplies';  // 多頭保護現場厳選ヘビーユース消耗品（シーツ・消臭等）
+  | 'rescue_supplies'   // 多頭保護現場厳選ヘビーユース消耗品（シーツ・消臭等）
+  | 'camp_gear';        // キャンプ・アウトドア（設営時短・防寒/快適ギア）
 
 export interface CategoryInfo {
   id: CategoryId;
@@ -44,6 +45,8 @@ export interface Post {
   asin: string;
   amazon_url: string;
   affiliate_url: string;
+  room_url?: string; // 楽天ROOMの紹介URL（コレクション/商品）
+  affiliate_provider?: 'amazon' | 'rakuten' | 'room' | 'amazon_storefront'; // アフィリエイト誘導種別
   category: CategoryId;
   target_audience: string;
   platform: PlatformId;
@@ -61,9 +64,60 @@ export interface Post {
   };
   notes?: string;
   is_no_link?: boolean; // アカバン防止用のリンクなし共感ポストフラグ
+  reply_content?: string; // パターンB（ノウハウ・ギブ型）時のぶら下げリプライ本文
   tweet_id?: string;   // X API投稿成功時のツイートID
+  reply_tweet_id?: string; // X APIリプライ成功時のツイートID
+  threads_id?: string; // Threads投稿成功時の投稿ID
+  reply_threads_id?: string; // Threadsリプライ成功時の投稿ID
+  is_user_curated?: boolean; // ユーザーが手動編集・承認したAI学習用お手本ポスト
   created_at: string;
   updated_at: string;
+}
+
+// カテゴリー別の楽天ROOMコレクションURL
+export interface CategoryRoomUrls {
+  pet?: string;
+  camp?: string;
+  disaster?: string;
+  general?: string;
+}
+
+// カテゴリー別のAmazonストアフロント/アイデアリストURL
+export interface CategoryStorefrontUrls {
+  pet?: string;
+  camp?: string;
+  disaster?: string;
+  general?: string;
+}
+
+// 楽天APIや検索AIから取得するリサーチ商品モデル
+export interface ResearchProduct {
+  itemId: string;
+  title: string;
+  price: number;
+  reviewAverage: number;
+  reviewCount: number;
+  itemUrl: string;
+  affiliateUrl?: string;
+  roomUrl?: string;
+  imageUrl: string;
+  shopName: string;
+  caption?: string;
+  category: CategoryId;
+  genre: 'pet' | 'camp' | 'disaster' | 'life';
+  pointRate?: number;
+  postageFlag?: number; // 0: 送料別, 1: 送料無料
+}
+
+// リサーチ用ニーズ・キーワードプリセット
+export interface ResearchPreset {
+  id: string;
+  name: string;
+  keyword: string;
+  genre: 'pet' | 'camp' | 'disaster' | 'life';
+  description: string;
+  badgeText?: string;
+  suggestedAngle?: string;
 }
 
 export interface GeneratedVariation {
@@ -71,6 +125,7 @@ export interface GeneratedVariation {
   tone: ToneId;
   toneName: string;
   content: string;
+  replyContent?: string; // パターンB（ノウハウ・ギブ型）用のリプライ本文
   headline: string;
   characterCount: number;
   tags: string[];
@@ -147,7 +202,7 @@ export interface AutomatedExecutionResult {
   topicTitle: string;
   genre: 'life' | 'pet';
   content: string;
-  replyText?: string; // Xのリプライツリー用テキスト（カタログ・ストアフロント誘導）
+  replyText?: string; // リプライツリー用テキスト（カタログ・ストアフロント誘導）
   catalogUrls?: {
     amazonStorefront?: string;
     rakutenRoom?: string;
@@ -166,12 +221,15 @@ export interface AutomatedExecutionResult {
     postId?: string;
     postUrl?: string;
     replyPostId?: string;
+    replyError?: string;
     error?: string;
   };
   threadsResult?: {
     success: boolean;
     postId?: string;
     postUrl?: string;
+    replyPostId?: string;
+    replyError?: string;
     error?: string;
   };
 }

@@ -1,7 +1,14 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Database, Copy, Check, Key, Tag, Sparkles, ExternalLink, ShieldCheck, Download, Trash2, Send, AlertTriangle } from 'lucide-react';
+import { Database, Copy, Check, Key, Tag, Sparkles, ExternalLink, ShieldCheck, Download, Trash2, Send, AlertTriangle, ShoppingBag, FolderGit2 } from 'lucide-react';
+import {
+  getCategoryRoomUrls,
+  saveCategoryRoomUrls,
+  getCategoryStorefrontUrls,
+  saveCategoryStorefrontUrls,
+  DEFAULT_AMAZON_STOREFRONT_URL
+} from '@/lib/supabase';
 
 interface SettingsModalProps {
   currentTrackingId: string;
@@ -71,6 +78,72 @@ export function SettingsModal({
   const [xAccessToken, setXAccessToken] = useState('');
   const [xAccessSecret, setXAccessSecret] = useState('');
   const [savedXKeysMsg, setSavedXKeysMsg] = useState(false);
+
+  // Amazon Storefront settings
+  const [storefrontUrlGeneral, setStorefrontUrlGeneral] = useState('');
+  const [storefrontUrlPet, setStorefrontUrlPet] = useState('');
+  const [storefrontUrlCamp, setStorefrontUrlCamp] = useState('');
+  const [storefrontUrlDisaster, setStorefrontUrlDisaster] = useState('');
+  const [savedStorefrontMsg, setSavedStorefrontMsg] = useState(false);
+
+  // Rakuten & ROOM settings
+  const [rakutenAppId, setRakutenAppId] = useState('');
+  const [rakutenAffId, setRakutenAffId] = useState('');
+  const [roomUrlPet, setRoomUrlPet] = useState('');
+  const [roomUrlCamp, setRoomUrlCamp] = useState('');
+  const [roomUrlDisaster, setRoomUrlDisaster] = useState('');
+  const [rakutenRoomUrl, setRakutenRoomUrl] = useState('');
+  const [savedRakutenMsg, setSavedRakutenMsg] = useState(false);
+
+  React.useEffect(() => {
+    if (typeof window !== 'undefined') {
+      // Storefront URLs
+      const sfUrls = getCategoryStorefrontUrls();
+      setStorefrontUrlGeneral(sfUrls.general || DEFAULT_AMAZON_STOREFRONT_URL);
+      setStorefrontUrlPet(sfUrls.pet || '');
+      setStorefrontUrlCamp(sfUrls.camp || '');
+      setStorefrontUrlDisaster(sfUrls.disaster || '');
+
+      // Rakuten & ROOM URLs
+      setRakutenAppId(localStorage.getItem('rakuten_app_id') || '');
+      setRakutenAffId(localStorage.getItem('rakuten_affiliate_id') || '');
+      const roomUrls = getCategoryRoomUrls();
+      setRoomUrlPet(roomUrls.pet || '');
+      setRoomUrlCamp(roomUrls.camp || '');
+      setRoomUrlDisaster(roomUrls.disaster || '');
+      setRakutenRoomUrl(roomUrls.general || 'https://room.rakuten.co.jp/yonnana_pet/items');
+    }
+  }, []);
+
+  const handleSaveStorefront = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (typeof window !== 'undefined') {
+      saveCategoryStorefrontUrls({
+        general: storefrontUrlGeneral.trim() || DEFAULT_AMAZON_STOREFRONT_URL,
+        pet: storefrontUrlPet.trim(),
+        camp: storefrontUrlCamp.trim(),
+        disaster: storefrontUrlDisaster.trim(),
+      });
+    }
+    setSavedStorefrontMsg(true);
+    setTimeout(() => setSavedStorefrontMsg(false), 2000);
+  };
+
+  const handleSaveRakuten = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('rakuten_app_id', rakutenAppId.trim());
+      localStorage.setItem('rakuten_affiliate_id', rakutenAffId.trim());
+      saveCategoryRoomUrls({
+        pet: roomUrlPet.trim(),
+        camp: roomUrlCamp.trim(),
+        disaster: roomUrlDisaster.trim(),
+        general: rakutenRoomUrl.trim(),
+      });
+    }
+    setSavedRakutenMsg(true);
+    setTimeout(() => setSavedRakutenMsg(false), 2000);
+  };
 
   const handleCopySql = () => {
     navigator.clipboard.writeText(SUPABASE_SCHEMA_SQL);
@@ -206,16 +279,24 @@ export function SettingsModal({
         </div>
       </div>
 
-      {/* Amazon Tracking ID Configuration */}
-      <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-xs dark:border-zinc-800 dark:bg-zinc-900 space-y-4">
-        <h3 className="text-sm font-bold text-zinc-900 dark:text-white flex items-center gap-2">
-          <Tag className="h-4 w-4 text-emerald-600" />
-          <span>Amazonアソシエイト トラッキングID設定</span>
-        </h3>
+      {/* Amazon Tracking ID & Storefront Configuration */}
+      <div className="rounded-2xl border border-amber-200 bg-white p-5 shadow-xs dark:border-amber-950/60 dark:bg-zinc-900 space-y-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Tag className="h-4 w-4 text-amber-600" />
+            <h3 className="text-sm font-bold text-zinc-900 dark:text-white">
+              🛒 Amazonアソシエイト ＆ ストアフロント設定
+            </h3>
+          </div>
+          <span className="rounded-full bg-amber-50 px-2.5 py-0.5 text-[10px] font-mono text-amber-700 dark:bg-amber-950 dark:text-amber-300">
+            Amazon Influencer / Associates
+          </span>
+        </div>
 
-        <form onSubmit={handleSaveTrackingId}>
+        {/* トラッキングID */}
+        <form onSubmit={handleSaveTrackingId} className="space-y-1">
           <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
-            トラッキングID (例: yourname-22)
+            Amazonアソシエイト トラッキングID (例: yourname-22)
           </label>
           <div className="flex gap-2">
             <input
@@ -223,17 +304,279 @@ export function SettingsModal({
               value={trackingIdInput}
               onChange={e => setTrackingIdInput(e.target.value)}
               placeholder="例: pet-lifestyle-22"
-              className="flex-1 rounded-xl border border-zinc-300 bg-white px-3.5 py-2 text-xs font-mono focus:border-emerald-500 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+              className="flex-1 rounded-xl border border-zinc-300 bg-white px-3.5 py-2 text-xs font-mono focus:border-amber-500 focus:outline-hidden dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
             />
             <button
               type="submit"
-              className="rounded-xl bg-emerald-600 px-4 py-2 text-xs font-bold text-white shadow-xs hover:bg-emerald-700"
+              className="rounded-xl bg-amber-600 px-4 py-2 text-xs font-bold text-white shadow-xs hover:bg-amber-700"
             >
               更新
             </button>
           </div>
           {savedTrackingMsg && (
-            <p className="mt-1 text-xs text-emerald-600 font-semibold">トラッキングIDを更新しました！</p>
+            <p className="mt-1 text-xs text-amber-600 font-semibold">トラッキングIDを更新しました！</p>
+          )}
+        </form>
+
+        {/* ストアフロントURL設定 */}
+        <form onSubmit={handleSaveStorefront} className="space-y-3 pt-3 border-t border-zinc-100 dark:border-zinc-800">
+          <div>
+            <div className="flex items-center justify-between">
+              <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1 flex items-center gap-1">
+                <span>🛒</span>
+                <span>基本 AmazonストアフロントURL (shop/〇〇)</span>
+              </label>
+              <a
+                href="https://www.amazon.co.jp/shop"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-[11px] text-amber-600 hover:underline flex items-center gap-0.5"
+              >
+                <span>Amazonで確認</span>
+                <ExternalLink className="h-3 w-3" />
+              </a>
+            </div>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={storefrontUrlGeneral}
+                onChange={e => setStorefrontUrlGeneral(e.target.value)}
+                placeholder="https://www.amazon.co.jp/shop/ユーザー名"
+                className="flex-1 rounded-xl border border-zinc-300 bg-white px-3.5 py-2 text-xs font-mono focus:border-amber-500 focus:outline-hidden dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+              />
+              <button
+                type="submit"
+                className="rounded-xl bg-amber-600 px-4 py-2 text-xs font-bold text-white shadow-xs hover:bg-amber-700"
+              >
+                保存
+              </button>
+            </div>
+            <p className="mt-1 text-[11px] text-zinc-500">
+              売れ筋リサーチStudioや自動化パイプラインのリプライ欄に誘導先リンクとして自動挿入されます。
+            </p>
+          </div>
+
+          {/* カテゴリー別 ストアフロント（アイデアリスト）URL */}
+          <div className="pt-2 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-1.5">
+                <FolderGit2 className="h-3.5 w-3.5 text-amber-600" />
+                <span>カテゴリー別 アイデアリストURL（オプション）</span>
+              </span>
+              <span className="text-[10px] text-zinc-400">
+                リサーチ画面でジャンルを切り替えると自動セットされます
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+              <div>
+                <label className="block text-[11px] font-semibold text-zinc-700 dark:text-zinc-300 mb-1 flex items-center gap-1">
+                  <span>🐶</span>
+                  <span>ペット用品</span>
+                </label>
+                <input
+                  type="text"
+                  value={storefrontUrlPet}
+                  onChange={e => setStorefrontUrlPet(e.target.value)}
+                  placeholder="ペット用リストURL"
+                  className="w-full rounded-xl border border-zinc-300 bg-white px-3 py-2 text-[11px] font-mono focus:border-amber-500 focus:outline-hidden dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-zinc-700 dark:text-zinc-300 mb-1 flex items-center gap-1">
+                  <span>⛺</span>
+                  <span>キャンプ用品</span>
+                </label>
+                <input
+                  type="text"
+                  value={storefrontUrlCamp}
+                  onChange={e => setStorefrontUrlCamp(e.target.value)}
+                  placeholder="キャンプ用リストURL"
+                  className="w-full rounded-xl border border-zinc-300 bg-white px-3 py-2 text-[11px] font-mono focus:border-amber-500 focus:outline-hidden dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-zinc-700 dark:text-zinc-300 mb-1 flex items-center gap-1">
+                  <span>🎒</span>
+                  <span>防災用品</span>
+                </label>
+                <input
+                  type="text"
+                  value={storefrontUrlDisaster}
+                  onChange={e => setStorefrontUrlDisaster(e.target.value)}
+                  placeholder="防災用リストURL"
+                  className="w-full rounded-xl border border-zinc-300 bg-white px-3 py-2 text-[11px] font-mono focus:border-amber-500 focus:outline-hidden dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end pt-1">
+              <button
+                type="submit"
+                className="rounded-xl bg-zinc-800 hover:bg-zinc-900 text-white dark:bg-zinc-700 dark:hover:bg-zinc-600 px-4 py-1.5 text-xs font-bold transition shadow-xs"
+              >
+                カテゴリー別URLを一括保存
+              </button>
+            </div>
+          </div>
+
+          {savedStorefrontMsg && (
+            <p className="mt-1 text-xs text-emerald-600 font-semibold flex items-center gap-1">
+              <Check className="h-4 w-4" />
+              <span>Amazonストアフロント設定を更新しました！</span>
+            </p>
+          )}
+        </form>
+      </div>
+
+      {/* Rakuten API & ROOM Settings */}
+      <div className="rounded-2xl border border-red-200 bg-white p-5 shadow-xs dark:border-red-950/60 dark:bg-zinc-900 space-y-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <ShoppingBag className="h-4 w-4 text-red-600" />
+            <h3 className="text-sm font-bold text-zinc-900 dark:text-white">
+              🛍️ 楽天市場商品検索API ＆ 楽天ROOM設定
+            </h3>
+          </div>
+          <span className="rounded-full bg-red-50 px-2.5 py-0.5 text-[10px] font-mono text-red-700 dark:bg-red-950 dark:text-red-300">
+            Rakuten Developers 対応
+          </span>
+        </div>
+
+        <p className="text-xs text-zinc-500">
+          楽天市場商品検索API（Application ID）を設定すると、新設した「売れ筋リサーチ」タブで最新のレビュー件数・高評価順ランキングをリアルタイム取得できます。未設定時はシミュレーションデータで安全に全機能をお試しいただけます。
+        </p>
+
+        <form onSubmit={handleSaveRakuten} className="space-y-3">
+          <div>
+            <div className="flex items-center justify-between">
+              <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
+                楽天 Application ID（アプリID）
+              </label>
+              <a
+                href="https://webservice.rakuten.co.jp/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-[11px] text-red-600 hover:underline flex items-center gap-0.5"
+              >
+                <span>Rakuten Developersで無料発行</span>
+                <ExternalLink className="h-3 w-3" />
+              </a>
+            </div>
+            <input
+              type="text"
+              value={rakutenAppId}
+              onChange={e => setRakutenAppId(e.target.value)}
+              placeholder="例: 10xxxxxxxxxxxxxxxxx"
+              className="w-full rounded-xl border border-zinc-300 bg-white px-3.5 py-2 text-xs font-mono focus:border-red-500 focus:outline-hidden dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+            />
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1">
+                楽天 アフィリエイトID (オプション)
+              </label>
+              <input
+                type="text"
+                value={rakutenAffId}
+                onChange={e => setRakutenAffId(e.target.value)}
+                placeholder="例: 1xxxxxxx.xxxxxxxx.1xxxxxxx"
+                className="w-full rounded-xl border border-zinc-300 bg-white px-3.5 py-2 text-xs font-mono focus:border-red-500 focus:outline-hidden dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-1 flex items-center gap-1">
+                <span>🌐</span>
+                <span>共通・基本 ROOM URL (未設定時)</span>
+              </label>
+              <input
+                type="text"
+                value={rakutenRoomUrl}
+                onChange={e => setRakutenRoomUrl(e.target.value)}
+                placeholder="https://room.rakuten.co.jp/ユーザー名/items"
+                className="w-full rounded-xl border border-zinc-300 bg-white px-3.5 py-2 text-xs font-mono focus:border-red-500 focus:outline-hidden dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+              />
+            </div>
+          </div>
+
+          {/* カテゴリー別 ROOM コレクションURL */}
+          <div className="pt-3 border-t border-zinc-200 dark:border-zinc-800 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-1.5">
+                <FolderGit2 className="h-3.5 w-3.5 text-red-500" />
+                <span>カテゴリー別 楽天ROOM コレクションURL（自動連動）</span>
+              </span>
+              <span className="text-[10px] text-zinc-400">
+                リサーチ画面のタブ切り替えで自動セットされます
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+              <div>
+                <label className="block text-[11px] font-semibold text-zinc-700 dark:text-zinc-300 mb-1 flex items-center gap-1">
+                  <span>🐶</span>
+                  <span>ペット用品</span>
+                </label>
+                <input
+                  type="text"
+                  value={roomUrlPet}
+                  onChange={e => setRoomUrlPet(e.target.value)}
+                  placeholder="ペット用コレクションURL"
+                  className="w-full rounded-xl border border-zinc-300 bg-white px-3 py-2 text-[11px] font-mono focus:border-red-500 focus:outline-hidden dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-zinc-700 dark:text-zinc-300 mb-1 flex items-center gap-1">
+                  <span>⛺</span>
+                  <span>キャンプ・アウトドア</span>
+                </label>
+                <input
+                  type="text"
+                  value={roomUrlCamp}
+                  onChange={e => setRoomUrlCamp(e.target.value)}
+                  placeholder="キャンプ用コレクションURL"
+                  className="w-full rounded-xl border border-zinc-300 bg-white px-3 py-2 text-[11px] font-mono focus:border-red-500 focus:outline-hidden dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-zinc-700 dark:text-zinc-300 mb-1 flex items-center gap-1">
+                  <span>🎒</span>
+                  <span>防災・備蓄</span>
+                </label>
+                <input
+                  type="text"
+                  value={roomUrlDisaster}
+                  onChange={e => setRoomUrlDisaster(e.target.value)}
+                  placeholder="防災用コレクションURL"
+                  className="w-full rounded-xl border border-zinc-300 bg-white px-3 py-2 text-[11px] font-mono focus:border-red-500 focus:outline-hidden dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between pt-1">
+            <span className="text-[11px] text-zinc-400">
+              ※ ブラウザ内に安全に保存され、即座に売れ筋リサーチStudioへ反映されます
+            </span>
+            <button
+              type="submit"
+              className="rounded-xl bg-gradient-to-r from-red-600 to-rose-600 px-4 py-2 text-xs font-bold text-white shadow-xs hover:from-red-700 hover:to-rose-700 transition"
+            >
+              楽天設定を保存
+            </button>
+          </div>
+
+          {savedRakutenMsg && (
+            <p className="text-xs text-emerald-600 font-semibold flex items-center gap-1">
+              <Check className="h-3.5 w-3.5" />
+              <span>楽天設定を保存しました！売れ筋リサーチStudioで即座に有効になります。</span>
+            </p>
           )}
         </form>
       </div>

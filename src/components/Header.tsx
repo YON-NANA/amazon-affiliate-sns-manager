@@ -1,9 +1,9 @@
 'use client';
 
 import React from 'react';
-import { Sparkles, Database, Tag, Settings, Calendar, ListTodo, PlusCircle, ShoppingBag, ShieldCheck, Flame, PackagePlus, Zap } from 'lucide-react';
+import { Sparkles, Database, Tag, Settings, Calendar, ListTodo, PlusCircle, ShoppingBag, ShieldCheck, Flame, PackagePlus, Zap, Search, Smartphone } from 'lucide-react';
 
-export type NavTabId = 'autopilot' | 'generator' | 'pipeline' | 'calendar' | 'trends' | 'custom_products' | 'presets' | 'settings';
+export type NavTabId = 'autopilot' | 'research' | 'generator' | 'pipeline' | 'calendar' | 'trends' | 'custom_products' | 'presets' | 'settings';
 
 interface HeaderProps {
   activeTab: NavTabId;
@@ -14,6 +14,7 @@ interface HeaderProps {
   pendingCount: number;
   scheduledCount: number;
   productCount: number;
+  onOpenDeviceConnect?: () => void;
 }
 
 export function Header({
@@ -25,6 +26,7 @@ export function Header({
   pendingCount,
   scheduledCount,
   productCount,
+  onOpenDeviceConnect,
 }: HeaderProps) {
   return (
     <header className="sticky top-0 z-40 w-full border-b border-emerald-900/10 bg-white/90 backdrop-blur-md dark:border-emerald-500/10 dark:bg-zinc-950/90">
@@ -96,6 +98,19 @@ export function Header({
           >
             <Zap className="h-4 w-4 text-amber-400 fill-amber-400 animate-pulse" />
             <span>🚀 完全自動化</span>
+          </button>
+
+          {/* 🔍 売れ筋リサーチ・棚並べ */}
+          <button
+            onClick={() => setActiveTab('research')}
+            className={`flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition sm:text-sm ${
+              activeTab === 'research'
+                ? 'bg-teal-600 text-white shadow-sm'
+                : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800'
+            }`}
+          >
+            <Search className="h-3.5 w-3.5" />
+            <span>売れ筋リサーチ</span>
           </button>
 
           <button
@@ -178,6 +193,17 @@ export function Header({
           >
             <ShoppingBag className="h-3.5 w-3.5" />
             <span>定番4選</span>
+          </button>
+
+          {/* 📱 スマホ・他デバイス確認ボタン */}
+          <button
+            type="button"
+            onClick={onOpenDeviceConnect}
+            className="flex items-center gap-1 rounded-xl px-2.5 py-1.5 text-xs font-bold bg-emerald-50 text-emerald-800 hover:bg-emerald-100 dark:bg-emerald-950/50 dark:text-emerald-300 dark:hover:bg-emerald-900/60 border border-emerald-300 dark:border-emerald-700 shadow-xs transition"
+            title="スマートフォン・タブレットなどの他デバイスで確認（QRコード表示）"
+          >
+            <Smartphone className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+            <span className="hidden md:inline">📱 スマホで確認</span>
           </button>
 
           <button

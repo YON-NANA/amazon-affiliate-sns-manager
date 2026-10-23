@@ -8,8 +8,10 @@ import { PostPipeline } from '@/components/PostPipeline';
 import { SchedulerCalendar } from '@/components/SchedulerCalendar';
 import { DailyTrendsPanel } from '@/components/DailyTrendsPanel';
 import { CustomProductsManager } from '@/components/CustomProductsManager';
+import { ResearchStudio } from '@/components/ResearchStudio';
 import { PresetGallery } from '@/components/PresetGallery';
 import { SettingsModal } from '@/components/SettingsModal';
+import { DeviceConnectModal } from '@/components/DeviceConnectModal';
 import { fetchPosts, savePost, updatePostStatus, deletePost, fetchCustomProducts, saveCustomProduct, deleteCustomProduct } from '@/lib/supabase';
 import { Post, PostStatus, ProductPreset, CustomProduct, DailyTrendIdea } from '@/lib/types';
 
@@ -21,6 +23,7 @@ export default function Home() {
   const [trackingId, setTrackingId] = useState('sample-22');
   const [presetToLoad, setPresetToLoad] = useState<ProductPreset | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isDeviceModalOpen, setIsDeviceModalOpen] = useState(false);
 
   // Load tracking ID and initial posts & products
   useEffect(() => {
@@ -153,6 +156,7 @@ export default function Home() {
         pendingCount={pendingCount}
         scheduledCount={scheduledCount}
         productCount={customProducts.length}
+        onOpenDeviceConnect={() => setIsDeviceModalOpen(true)}
       />
 
       {/* Main Container */}
@@ -173,6 +177,13 @@ export default function Home() {
                   const resPosts = await fetchPosts();
                   setPosts(resPosts.posts);
                 }}
+              />
+            )}
+
+            {activeTab === 'research' && (
+              <ResearchStudio
+                onSavePost={handleSavePost}
+                onNavigateToPipeline={() => setActiveTab('pipeline')}
               />
             )}
 
@@ -240,6 +251,12 @@ export default function Home() {
           暮らし & ペット用品 Amazon アフィリエイトSNS投稿マネージャー ｜ 日次トレンド更新 ✕ アカバン防止ガード ✕ X自動予約
         </p>
       </footer>
+
+      {/* Other Device Connect Modal */}
+      <DeviceConnectModal
+        isOpen={isDeviceModalOpen}
+        onClose={() => setIsDeviceModalOpen(false)}
+      />
     </div>
   );
 }

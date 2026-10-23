@@ -1,5 +1,5 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import { Post, PostStatus, CustomProduct } from './types';
+import { Post, PostStatus, CustomProduct, CategoryRoomUrls, CategoryStorefrontUrls } from './types';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
@@ -152,6 +152,7 @@ export async function savePost(post: Omit<Post, 'id' | 'created_at' | 'updated_a
     created_at: now,
     updated_at: now,
     metrics: post.metrics || { clicks: 0, likes: 0, shares: 0 },
+    is_user_curated: post.is_user_curated !== undefined ? post.is_user_curated : true,
   };
 
   if (sb) {
@@ -375,4 +376,133 @@ export async function deleteCustomProduct(id: string): Promise<boolean> {
   }
 
   return false;
+}
+
+/**
+ * ユーザーが承認・編集して保存した直近の良質ポストを「お手本（Few-Shot学習データ）」として取得
+ */
+export async function fetchUserExemplars(genre?: string, limit = 4): Promise<string[]> {
+  try {
+    const { posts } = await fetchPosts();
+    if (!posts || posts.length === 0) return [];
+
+    // ユーザーが手動編集・保存した投稿を優先
+    const candidates = posts.filter(p => {
+      if (!p.content || p.content.trim().length < 40) return false;
+      // 下書き・予約済み・投稿済み
+      if (p.status !== 'scheduled' && p.status !== 'draft' && p.status !== 'published') return false;
+      // ジャンル指定がある場合はタグ一致を考慮
+      if (genre && p.tags && p.tags.some(t => t.toLowerCase().includes(genre.toLowerCase()))) return true;
+      return true;
+    });
+
+    const exemplars: string[] = [];
+    const seen = new Set<string>();
+
+    for (const post of candidates) {
+      let clean = post.content.trim();
+      // パターンB用にURLや#PRなどを除去した本文コア
+      clean = clean
+        .replace(/https?:\/\/[^\s]+/g, '')
+        .replace(/#PR\s*/g, '')
+        .replace(/👇[^\n]*\n?/g, '')
+        .replace(/【商品名】[^\n]*\n?/g, '')
+        .trim();
+
+      if (clean && !seen.has(clean) && clean.length >= 50) {
+        seen.add(clean);
+        exemplars.push(clean);
+        if (exemplars.length >= limit) break;
+      }
+    }
+
+    return exemplars;
+  } catch (e) {
+    console.warn('Failed to fetch user exemplars:', e);
+    return [];
+  }
+}
+
+/**
+ * カテゴリー別 楽天ROOM コレクションURL 管理
+ */
+export const ROOM_URL_KEYS = {
+  pet: 'rakuten_room_url_pet',
+  camp: 'rakuten_room_url_camp',
+  disaster: 'rakuten_room_url_disaster',
+  general: 'rakuten_room_url',
+} as const;
+
+export function getCategoryRoomUrls(): CategoryRoomUrls {
+  if (typeof window === 'undefined') {
+    return { general: 'https://room.rakuten.co.jp/yonnana_pet/items' };
+  }
+  return {
+    pet: localStorage.getItem(ROOM_URL_KEYS.pet) || '',
+    camp: localStorage.getItem(ROOM_URL_KEYS.camp) || '',
+    disaster: localStorage.getItem(ROOM_URL_KEYS.disaster) || '',
+    general: localStorage.getItem(ROOM_URL_KEYS.general) || 'https://room.rakuten.co.jp/yonnana_pet/items',
+  };
+}
+
+export function saveCategoryRoomUrls(urls: CategoryRoomUrls): void {
+  if (typeof window === 'undefined') return;
+  if (urls.pet !== undefined) localStorage.setItem(ROOM_URL_KEYS.pet, urls.pet.trim());
+  if (urls.camp !== undefined) localStorage.setItem(ROOM_URL_KEYS.camp, urls.camp.trim());
+  if (urls.disaster !== undefined) localStorage.setItem(ROOM_URL_KEYS.disaster, urls.disaster.trim());
+  if (urls.general !== undefined) localStorage.setItem(ROOM_URL_KEYS.general, urls.general.trim());
+}
+
+export function getRoomUrlForGenre(genre: string): string {
+  if (typeof window === 'undefined') return 'https://room.rakuten.co.jp/yonnana_pet/items';
+  const specificKey = genre === 'pet' ? ROOM_URL_KEYS.pet : genre === 'camp' ? ROOM_URL_KEYS.camp : genre === 'disaster' ? ROOM_URL_KEYS.disaster : null;
+  if (specificKey) {
+    const specificUrl = localStorage.getItem(specificKey);
+    if (specificUrl && specificUrl.trim()) return specificUrl.trim();
+  }
+  const generalUrl = localStorage.getItem(ROOM_URL_KEYS.general);
+  return generalUrl && generalUrl.trim() ? generalUrl.trim() : 'https://room.rakuten.co.jp/yonnana_pet/items';
+}
+
+/**
+ * カテゴリー別 Amazonストアフロント（またはアイデアリスト）URL 管理
+ */
+export const STOREFRONT_URL_KEYS = {
+  general: 'amazon_storefront_url',
+  pet: 'amazon_storefront_url_pet',
+  camp: 'amazon_storefront_url_camp',
+  disaster: 'amazon_storefront_url_disaster',
+} as const;
+
+export const DEFAULT_AMAZON_STOREFRONT_URL = 'https://www.amazon.co.jp/shop/yonnanahogo';
+
+export function getCategoryStorefrontUrls(): CategoryStorefrontUrls {
+  if (typeof window === 'undefined') {
+    return { general: DEFAULT_AMAZON_STOREFRONT_URL };
+  }
+  return {
+    general: localStorage.getItem(STOREFRONT_URL_KEYS.general) || DEFAULT_AMAZON_STOREFRONT_URL,
+    pet: localStorage.getItem(STOREFRONT_URL_KEYS.pet) || '',
+    camp: localStorage.getItem(STOREFRONT_URL_KEYS.camp) || '',
+    disaster: localStorage.getItem(STOREFRONT_URL_KEYS.disaster) || '',
+  };
+}
+
+export function saveCategoryStorefrontUrls(urls: CategoryStorefrontUrls): void {
+  if (typeof window === 'undefined') return;
+  if (urls.general !== undefined) localStorage.setItem(STOREFRONT_URL_KEYS.general, urls.general.trim());
+  if (urls.pet !== undefined) localStorage.setItem(STOREFRONT_URL_KEYS.pet, urls.pet.trim());
+  if (urls.camp !== undefined) localStorage.setItem(STOREFRONT_URL_KEYS.camp, urls.camp.trim());
+  if (urls.disaster !== undefined) localStorage.setItem(STOREFRONT_URL_KEYS.disaster, urls.disaster.trim());
+}
+
+export function getStorefrontUrlForGenre(genre: string): string {
+  if (typeof window === 'undefined') return DEFAULT_AMAZON_STOREFRONT_URL;
+  const specificKey = genre === 'pet' ? STOREFRONT_URL_KEYS.pet : genre === 'camp' ? STOREFRONT_URL_KEYS.camp : genre === 'disaster' ? STOREFRONT_URL_KEYS.disaster : null;
+  if (specificKey) {
+    const specificUrl = localStorage.getItem(specificKey);
+    if (specificUrl && specificUrl.trim()) return specificUrl.trim();
+  }
+  const generalUrl = localStorage.getItem(STOREFRONT_URL_KEYS.general);
+  return generalUrl && generalUrl.trim() ? generalUrl.trim() : DEFAULT_AMAZON_STOREFRONT_URL;
 }

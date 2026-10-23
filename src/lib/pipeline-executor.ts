@@ -123,9 +123,18 @@ export async function executeAutomatedPipeline(options: RunAutomatedOptions = {}
   // 4. 写真ストックフォルダ／CDN公開URLからの自動画像選定
   const chosenMedia = selectRandomStockMedia(customMediaDir);
 
-  // 5. SNS自動投下（X & Threads）※並列または順次実行
-  let xResult: { success: boolean; postId?: string; postUrl?: string; replyPostId?: string; error?: string } = { success: false };
-  let threadsResult: { success: boolean; postId?: string; postUrl?: string; error?: string } = { success: false };
+  // 判定: パターンA（直接訴求型） vs パターンB（ノウハウ・ギブ型）
+  // - パターンA: メイン本文に商品リンクを記載（現状のままでOK）
+  // - パターンB: メイン本文にリンクなし ➔ 自動でその投稿のリプライ欄にアフィリエイトリンク・カタログをぶら下げる
+  const isPatternB = postData.isNoLink || !postData.content.includes('http');
+  const shouldPostReply = isPatternB && Boolean(postData.replyText);
+
+  // 5. SNS自動投下（X & Threads）※メイン成功後にリプライを自動投稿
+  let xResult: { success: boolean; postId?: string; postUrl?: string; replyPostId?: string; replyError?: string; error?: string } = { success: false };
+  let threadsResult: { success: boolean; postId?: string; postUrl?: string; replyPostId?: string; replyError?: string; error?: string } = { success: false };
+
+  // 待機用スリープヘルパー（API側の反映ラグ防止）
+  const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
   if (!dryRun) {
     // 5-1. X (Twitter) へ直接投下
@@ -142,9 +151,31 @@ export async function executeAutomatedPipeline(options: RunAutomatedOptions = {}
           postId: xRes.tweetId,
           postUrl: xRes.tweetUrl,
         };
+
+        // パターンB（ノウハウ・ギブ型）かつメイン投稿成功時: 1〜2秒待機後にリプライをぶら下げる
+        if (shouldPostReply && xRes.success && xRes.tweetId && postData.replyText) {
+          try {
+            console.log(`[Pipeline] Waiting 2 seconds before posting reply to tweet ${xRes.tweetId}...`);
+            await sleep(2000); // 待機（sleep: API反映ラグ防止）
+
+            const replyRes = await executePostToX({
+              content: postData.replyText,
+              replyToTweetId: xRes.tweetId,
+              isNoLink: false,
+            });
+            if (replyRes.success) {
+              xResult.replyPostId = replyRes.tweetId;
+              console.log(`[Pipeline] X reply tree posted successfully: ${replyRes.tweetId}`);
+            }
+          } catch (replyErr: any) {
+            console.error('[Pipeline] Failed to post reply tree to X:', replyErr);
+            xResult.replyError = replyErr.message || 'Xリプライ投稿エラー';
+          }
+        }
       } catch (e: any) {
         console.error('Direct PostToX Error:', e);
         xResult = { success: false, error: e.message || 'X投稿エラー' };
+        // メイン投稿が失敗した場合はリプライ処理をスキップ
       }
     }
 
@@ -162,14 +193,46 @@ export async function executeAutomatedPipeline(options: RunAutomatedOptions = {}
           postId: thRes.postId,
           postUrl: thRes.postUrl,
         };
+
+        // パターンB（ノウハウ・ギブ型）かつメイン投稿成功時: 1〜2秒待機後にリプライをぶら下げる
+        if (shouldPostReply && thRes.success && thRes.postId && postData.replyText) {
+          try {
+            console.log(`[Pipeline] Waiting 2 seconds before posting reply to Threads ${thRes.postId}...`);
+            await sleep(2000); // 待機（sleep: API反映ラグ防止）
+
+            const replyRes = await executePostToThreads({
+              content: postData.replyText,
+              replyToId: thRes.postId,
+              isNoLink: false,
+            });
+            if (replyRes.success) {
+              threadsResult.replyPostId = replyRes.postId;
+              console.log(`[Pipeline] Threads reply posted successfully: ${replyRes.postId}`);
+            }
+          } catch (replyErr: any) {
+            console.error('[Pipeline] Failed to post reply tree to Threads:', replyErr);
+            threadsResult.replyError = replyErr.message || 'Threadsリプライ投稿エラー';
+          }
+        }
       } catch (e: any) {
         console.error('Direct PostToThreads Error:', e);
         threadsResult = { success: false, error: e.message || 'Threads投稿エラー' };
+        // メイン投稿が失敗した場合はリプライ処理をスキップ
       }
     }
   } else {
-    xResult = { success: true, postId: 'dry_run_x', postUrl: 'https://x.com (テスト実行)' };
-    threadsResult = { success: true, postId: 'dry_run_th', postUrl: 'https://threads.net (テスト実行)' };
+    xResult = {
+      success: true,
+      postId: 'dry_run_x',
+      postUrl: 'https://x.com (テスト実行)',
+      replyPostId: shouldPostReply ? 'dry_run_x_reply' : undefined,
+    };
+    threadsResult = {
+      success: true,
+      postId: 'dry_run_th',
+      postUrl: 'https://threads.net (テスト実行)',
+      replyPostId: shouldPostReply ? 'dry_run_th_reply' : undefined,
+    };
   }
 
   const executionResult: AutomatedExecutionResult = {
