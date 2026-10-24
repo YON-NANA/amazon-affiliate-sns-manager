@@ -29,12 +29,57 @@ import {
   MessageSquareReply
 } from 'lucide-react';
 import { CATEGORIES } from '@/lib/presets';
+import { convertToRakutenAffiliateUrl } from '@/lib/rakuten';
 
 interface PostPipelineProps {
   posts: Post[];
   onUpdateStatus: (id: string, status: PostStatus, extras?: { scheduled_at?: string | null; published_at?: string | null; tweet_id?: string }) => Promise<void>;
   onDeletePost: (id: string) => Promise<void>;
   onSelectForEdit?: (post: Post) => void;
+}
+
+/**
+ * 投稿を「メイン投稿（共感ストーリー・リンクなし）」と「ぶら下げリプライ（アフィリURL＋#PR）」に完全分離・解決するヘルパー
+ */
+export function resolvePostParts(post: Post): { mainContent: string; replyContent?: string; affiliateUrl: string; isTravel: boolean } {
+  const isTravel = post.category === 'pet_travel' || post.affiliate_provider === 'rakuten' || /travel\.rakuten|hb\.afl\.rakuten|a\.r10\.to/i.test(post.content + ' ' + (post.reply_content || '') + ' ' + post.affiliate_url);
+  
+  // アフィリエイトURLの解決
+  let rawAffUrl = post.affiliate_url || post.amazon_url || '';
+  const urlMatch = post.content.match(/https?:\/\/[^\s]+/);
+  if (!rawAffUrl && urlMatch) {
+    rawAffUrl = urlMatch[0];
+  }
+  const effectiveAffUrl = isTravel
+    ? convertToRakutenAffiliateUrl(rawAffUrl)
+    : (rawAffUrl || 'https://www.amazon.co.jp/shop/yonnanahogo');
+
+  // メイン本文のサニタイズ（リンクやPRタグの除去）
+  const shouldSeparate = isTravel || post.is_no_link || !!post.reply_content || !!urlMatch;
+  const mainContent = shouldSeparate
+    ? post.content
+        .replace(/https?:\/\/[^\s]+/g, '')
+        .replace(/#PR\b|※PR\b|\[PR\]|【PR】/g, '')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim()
+    : post.content;
+
+  // ぶら下げリプライの解決
+  let replyContent = post.reply_content?.trim();
+  if (replyContent) {
+    // リプライ内に素の楽天トラベルURLがあれば成果発生用アフィリURLに置換
+    if (isTravel) {
+      replyContent = replyContent.replace(/https?:\/\/travel\.rakuten\.co\.jp[^\s]*/g, (m) => convertToRakutenAffiliateUrl(m));
+    }
+  } else if (shouldSeparate) {
+    if (isTravel) {
+      replyContent = `愛犬と安心して泊まれるおすすめのお宿はこちら 🐾✨️\n\n【${post.title || 'おすすめの宿'}】\nペット同伴OK・設備充実で、初めてのお泊まり旅行でも安心です。\n\n空室状況・プラン詳細はこちらから確認できます👇\n\n🔗 ${effectiveAffUrl} ※PR`;
+    } else {
+      replyContent = `てな訳で、おすすめの神アイテムはコチラ ✨️ｷﾗｯ→\n\n【${post.title || 'おすすめ便利アイテム'}】\n我が家でも大活躍中。使い勝手も良く耐久性・機能性抜群で、毎日の負担が一気に激減します。\n\n全飼い主に推したい。\n\n🔗 ${effectiveAffUrl} ※PR`;
+    }
+  }
+
+  return { mainContent, replyContent, affiliateUrl: effectiveAffUrl, isTravel };
 }
 
 export function PostPipeline({
@@ -80,14 +125,16 @@ export function PostPipeline({
     setPostingId(post.id);
     setApiNotice(null);
 
+    const { mainContent, replyContent, affiliateUrl } = resolvePostParts(post);
+
     try {
       const res = await fetch('/api/post-to-x', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           postId: post.id,
-          content: post.content,
-          isNoLink: post.is_no_link || false,
+          content: mainContent,
+          isNoLink: !!replyContent,
         }),
       });
 
@@ -96,21 +143,17 @@ export function PostPipeline({
         throw new Error(data.error || 'X APIへの投稿に失敗しました');
       }
 
-      // パターンB（ノウハウ・ギブ型: リンクなし投稿）の場合、メイン投稿後にリプライを自動投稿
-      const isPatternB = post.is_no_link || !post.content.includes('http');
+      // ぶら下げリプライの自動投稿
       let replyTweetId: string | undefined;
 
-      if (isPatternB && data.tweetId) {
-        const replyText =
-          post.reply_content ||
-          `てな訳で、おすすめの神アイテムはコチラ ✨️ｷﾗｯ→\n\n【おすすめペット用品 / 暮らしの神アイテム】\n我が家でも大活躍中。使い勝手も良く耐久性・機能性抜群で、毎日の負担が一気に激減します。\n\n全飼い主に推したい。\n\n🔗 ${post.affiliate_url || 'https://www.amazon.co.jp/shop/yonnanahogo'} ※PR`;
+      if (replyContent && data.tweetId) {
         await new Promise((r) => setTimeout(r, 2000)); // API反映ラグ防止待機
         try {
           const replyRes = await fetch('/api/post-to-x', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              content: replyText,
+              content: replyContent,
               replyToTweetId: data.tweetId,
               isNoLink: false,
             }),
@@ -154,14 +197,16 @@ export function PostPipeline({
     setPostingId(`th_${post.id}`);
     setApiNotice(null);
 
+    const { mainContent, replyContent, affiliateUrl } = resolvePostParts(post);
+
     try {
       const res = await fetch('/api/post-to-threads', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           postId: post.id,
-          content: post.content,
-          isNoLink: post.is_no_link || false,
+          content: mainContent,
+          isNoLink: !!replyContent,
         }),
       });
 
@@ -170,21 +215,17 @@ export function PostPipeline({
         throw new Error(data.error || 'Threads APIへの投稿に失敗しました');
       }
 
-      // パターンB（ノウハウ・ギブ型: リンクなし投稿）の場合、メイン投稿後にリプライを自動投稿
-      const isPatternB = post.is_no_link || !post.content.includes('http');
+      // ぶら下げリプライの自動投稿
       let replyThreadId: string | undefined;
 
-      if (isPatternB && data.postId) {
-        const replyText =
-          post.reply_content ||
-          `てな訳で、おすすめの神アイテムはコチラ ✨️ｷﾗｯ→\n\n【おすすめペット用品 / 暮らしの神アイテム】\n我が家でも大活躍中。使い勝手も良く耐久性・機能性抜群で、毎日の負担が一気に激減します。\n\n全飼い主に推したい。\n\n🔗 ${post.affiliate_url || 'https://www.amazon.co.jp/shop/yonnanahogo'} ※PR`;
+      if (replyContent && data.postId) {
         await new Promise((r) => setTimeout(r, 2000)); // API反映ラグ防止待機
         try {
           const replyRes = await fetch('/api/post-to-threads', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              content: replyText,
+              content: replyContent,
               replyToId: data.postId,
               isNoLink: false,
             }),
@@ -387,6 +428,7 @@ export function PostPipeline({
           {filteredPosts.map(post => {
             const isPet = post.category.startsWith('pet');
             const hasNotice = apiNotice && apiNotice.id === post.id;
+            const { mainContent, replyContent, affiliateUrl, isTravel } = resolvePostParts(post);
 
             return (
               <div
@@ -447,9 +489,19 @@ export function PostPipeline({
                     </div>
                   )}
 
-                  {/* Content snippet */}
-                  <div className="mt-3 rounded-xl bg-zinc-50 p-3 text-xs leading-relaxed text-zinc-700 dark:bg-zinc-950 dark:text-zinc-300 whitespace-pre-wrap font-sans max-h-44 overflow-y-auto">
-                    {post.content}
+                  {/* Content snippet: 1. Main Post (No Link) */}
+                  <div className="mt-3 space-y-1">
+                    <div className="flex items-center justify-between text-[11px] text-zinc-500">
+                      <span className="font-semibold text-zinc-700 dark:text-zinc-300 flex items-center gap-1">
+                        <span className="flex h-4 w-4 items-center justify-center rounded-full bg-emerald-100 text-[10px] font-bold text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
+                          1
+                        </span>
+                        メイン投稿（共感ストーリー・リンクなし）
+                      </span>
+                    </div>
+                    <div className="rounded-xl bg-zinc-50 p-3 text-xs leading-relaxed text-zinc-700 dark:bg-zinc-950 dark:text-zinc-300 whitespace-pre-wrap font-sans max-h-44 overflow-y-auto border border-zinc-200/50 dark:border-zinc-800/50">
+                      {mainContent}
+                    </div>
                   </div>
 
                   {/* Notice feedback if any */}
@@ -459,40 +511,37 @@ export function PostPipeline({
                     </div>
                   )}
 
-                  {/* Affiliate Link Badge */}
-                  {!post.is_no_link && (
-                    <div className="mt-2 flex items-center justify-between gap-2 rounded-lg bg-emerald-50/50 px-2.5 py-1 text-[11px] text-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-300">
-                      <span className="truncate font-mono">{post.affiliate_url}</span>
-                      <a
-                        href={post.affiliate_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="shrink-0 flex items-center gap-0.5 text-emerald-700 hover:underline"
-                      >
-                        <ExternalLink className="h-3 w-3" />
-                        開く
-                      </a>
-                    </div>
-                  )}
-
-                  {/* Reply Content Preview (Pattern B) */}
-                  {post.reply_content && (
-                    <div className="mt-2.5 rounded-xl border border-indigo-100 bg-indigo-50/60 p-2.5 dark:border-indigo-900/50 dark:bg-indigo-950/20">
-                      <div className="flex items-center justify-between text-[11px] font-bold text-indigo-800 dark:text-indigo-300">
+                  {/* Reply Content Preview (Pattern B: Affiliate Link + PR) */}
+                  {replyContent && (
+                    <div className="mt-2.5 rounded-xl border border-rose-200/70 bg-rose-50/50 p-2.5 dark:border-rose-900/50 dark:bg-rose-950/20">
+                      <div className="flex items-center justify-between text-[11px] font-bold text-rose-800 dark:text-rose-300">
                         <span className="flex items-center gap-1">
                           <MessageSquareReply className="h-3 w-3" />
-                          自動ぶら下げリプライ
+                          2. 自動ぶら下げリプライ（アフィリURL＋#PR）
                         </span>
                         <button
                           type="button"
-                          onClick={() => handleCopy(`reply_${post.id}`, post.reply_content || '')}
-                          className="flex items-center gap-0.5 text-[10px] text-indigo-600 hover:underline dark:text-indigo-400"
+                          onClick={() => handleCopy(`reply_${post.id}`, replyContent)}
+                          className="flex items-center gap-0.5 text-[10px] text-rose-700 hover:underline dark:text-rose-400"
                         >
                           {copiedId === `reply_${post.id}` ? 'コピー済' : '返信コピー'}
                         </button>
                       </div>
-                      <div className="mt-1 text-[11px] leading-relaxed text-indigo-950 dark:text-indigo-200 whitespace-pre-wrap max-h-28 overflow-y-auto font-sans">
-                        {post.reply_content}
+                      <div className="mt-1 text-[11px] leading-relaxed text-zinc-800 dark:text-zinc-200 whitespace-pre-wrap max-h-28 overflow-y-auto font-sans">
+                        {replyContent}
+                      </div>
+                      {/* アフィリエイトURLの成果発生リンク表示 */}
+                      <div className="mt-1.5 flex items-center justify-between gap-1 text-[10px] text-rose-700 dark:text-rose-400 font-mono bg-white/70 dark:bg-black/30 px-2 py-0.5 rounded border border-rose-100 dark:border-rose-900/40">
+                        <span className="truncate">成果リンク: {affiliateUrl}</span>
+                        <a
+                          href={affiliateUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="shrink-0 flex items-center gap-0.5 font-bold hover:underline"
+                        >
+                          開く
+                          <ExternalLink className="h-2.5 w-2.5" />
+                        </a>
                       </div>
                     </div>
                   )}
@@ -501,10 +550,11 @@ export function PostPipeline({
                 {/* Card Actions (Semi-automatic control + Direct API Post) */}
                 <div className="mt-4 border-t border-zinc-100 pt-3 dark:border-zinc-800 space-y-2">
                   <div className="flex items-center gap-2">
-                    {/* Copy button */}
+                    {/* Copy button (main post) */}
                     <button
-                      onClick={() => handleCopy(post.id, post.content)}
+                      onClick={() => handleCopy(post.id, mainContent)}
                       className="flex-1 flex items-center justify-center gap-1 rounded-xl border border-zinc-200 bg-white py-1.5 text-xs font-semibold text-zinc-700 shadow-xs hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200"
+                      title="メイン投稿本文（リンクなし）をコピー"
                     >
                       {copiedId === post.id ? (
                         <>
@@ -543,11 +593,11 @@ export function PostPipeline({
 
                     {/* Open in X web intent */}
                     <a
-                      href={`https://x.com/intent/tweet?text=${encodeURIComponent(post.content)}`}
+                      href={`https://x.com/intent/tweet?text=${encodeURIComponent(mainContent)}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="flex items-center gap-0.5 rounded-xl bg-zinc-900 px-2 py-1.5 text-xs font-semibold text-white shadow-xs hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900"
-                      title="ブラウザでX投稿画面を開く"
+                      title="ブラウザでX投稿画面を開く（メイン投稿）"
                     >
                       <span>𝕏</span>
                       <ExternalLink className="h-2.5 w-2.5" />
@@ -555,11 +605,11 @@ export function PostPipeline({
 
                     {/* Open in Threads web intent */}
                     <a
-                      href={`https://threads.net/intent/post?text=${encodeURIComponent(post.content)}`}
+                      href={`https://threads.net/intent/post?text=${encodeURIComponent(mainContent)}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="flex items-center gap-0.5 rounded-xl border border-zinc-300 bg-zinc-100 px-2 py-1.5 text-xs font-semibold text-zinc-900 shadow-xs hover:bg-zinc-200 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200"
-                      title="ブラウザでThreads投稿画面を開く"
+                      title="ブラウザでThreads投稿画面を開く（メイン投稿）"
                     >
                       <span>Threads</span>
                       <ExternalLink className="h-2.5 w-2.5" />

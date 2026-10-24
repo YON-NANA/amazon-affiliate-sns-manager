@@ -17,9 +17,11 @@ import {
   ChevronRight,
   HelpCircle,
   Tag,
-  BookmarkPlus
+  BookmarkPlus,
+  MessageSquare
 } from 'lucide-react';
 import { parseAmazonInput, generateAffiliateUrl } from '@/lib/amazon';
+import { convertToRakutenAffiliateUrl, isRakutenAffiliateLink } from '@/lib/rakuten';
 import { CATEGORIES } from '@/lib/presets';
 import { CategoryId, GeneratedVariation, PlatformId, Post, ProductPreset, ToneId } from '@/lib/types';
 import confetti from 'canvas-confetti';
@@ -80,10 +82,12 @@ export function PostGenerator({
   const [variations, setVariations] = useState<GeneratedVariation[]>([]);
   const [activeVariationIndex, setActiveVariationIndex] = useState(0);
   const [editedContent, setEditedContent] = useState('');
+  const [editedReplyContent, setEditedReplyContent] = useState('');
   const [generationSource, setGenerationSource] = useState<string>('');
 
   // Feedback states
   const [copied, setCopied] = useState(false);
+  const [copiedReply, setCopiedReply] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
@@ -105,10 +109,12 @@ export function PostGenerator({
       return;
     }
 
-    // 楽天トラベル / 楽天アフィリエイトURLの自動検出
+    // 楽天トラベル / 楽天アフィリエイトURLの自動検出とアフィリURL自動変換
     if (isRakutenTravelUrl(urlInput)) {
       setDetectedAsin('RAKUTEN_TRAVEL');
-      setAffiliateLink(urlInput.trim());
+      const storedAffId = typeof window !== 'undefined' ? localStorage.getItem('rakuten_affiliate_id') || '' : '';
+      const finalAffLink = convertToRakutenAffiliateUrl(urlInput.trim(), storedAffId);
+      setAffiliateLink(finalAffLink);
       setGenre('pet');
       setCategory('pet_travel');
       return;
@@ -138,10 +144,11 @@ export function PostGenerator({
     }
   }, [presetToLoad, onClearPreset]);
 
-  // Sync editedContent when active variation changes
+  // Sync editedContent and editedReplyContent when active variation changes
   useEffect(() => {
     if (variations[activeVariationIndex]) {
       setEditedContent(variations[activeVariationIndex].content);
+      setEditedReplyContent(variations[activeVariationIndex].replyContent || '');
     }
   }, [activeVariationIndex, variations]);
 
@@ -161,6 +168,22 @@ export function PostGenerator({
     setBenefits(updated.length ? updated : ['']);
   };
 
+  // Copy main post to clipboard
+  const handleCopy = () => {
+    if (!editedContent) return;
+    navigator.clipboard.writeText(editedContent);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  // Copy reply to clipboard
+  const handleCopyReply = () => {
+    if (!editedReplyContent) return;
+    navigator.clipboard.writeText(editedReplyContent);
+    setCopiedReply(true);
+    setTimeout(() => setCopiedReply(false), 2000);
+  };
+
   // Generate with AI
   const handleGenerate = async () => {
     if (!title.trim()) {
@@ -168,10 +191,18 @@ export function PostGenerator({
       return;
     }
 
+    const storedAffId = typeof window !== 'undefined' ? localStorage.getItem('rakuten_affiliate_id') || '' : '';
     const effectiveAsin = detectedAsin || (isTravelMode ? 'RAKUTEN_TRAVEL' : 'B0SAMPLE10');
-    const effectiveAffiliateUrl = 
-      affiliateLink || 
-      (isTravelMode ? (urlInput.trim() || 'https://travel.rakuten.co.jp/') : generateAffiliateUrl(effectiveAsin, trackingId));
+    
+    // 成果発生用アフィリエイトURLの解決（短縮リンクまたはhb.afl.rakuten形式へ自動変換）
+    let effectiveAffiliateUrl = affiliateLink;
+    if (isTravelMode) {
+      const rawUrl = urlInput.trim() || 'https://travel.rakuten.co.jp/';
+      effectiveAffiliateUrl = convertToRakutenAffiliateUrl(rawUrl, storedAffId);
+      setAffiliateLink(effectiveAffiliateUrl);
+    } else if (!effectiveAffiliateUrl) {
+      effectiveAffiliateUrl = generateAffiliateUrl(effectiveAsin, trackingId);
+    }
 
     setIsGenerating(true);
     setStatusMessage(null);
@@ -188,6 +219,9 @@ export function PostGenerator({
           genre,
           targetAudience: targetAudience.trim() || (isTravelMode ? '愛犬と初めて旅行する飼い主さん' : ''),
           affiliateUrl: effectiveAffiliateUrl,
+          rakutenAffiliateId: storedAffId || undefined,
+          targetMode: 'pattern_b_all', // メイン投稿（リンクなし）＋ぶら下げリプライ（アフィリリンク）に完全分離
+          includeNoLinkPost: true,
           platform,
           benefits: filteredBenefits,
           customNotes: customNotes.trim(),
@@ -200,9 +234,29 @@ export function PostGenerator({
       }
 
       if (data.variations && data.variations.length > 0) {
-        setVariations(data.variations);
+        // メイン本文からURLや#PRを除去し、完全分離を担保
+        const sanitizedVariations = data.variations.map((v: GeneratedVariation) => {
+          let cleanContent = (v.content || '')
+            .replace(/https?:\/\/[^\s]+/g, '')
+            .replace(/#PR\b|※PR\b|\[PR\]|【PR】/g, '')
+            .replace(/\n{3,}/g, '\n\n')
+            .trim();
+
+          let reply = v.replyContent || '';
+          if (!reply && isTravelMode) {
+            reply = `愛犬と安心して泊まれるおすすめのお宿はこちら 🐾✨️\n\n【${title.trim()}】\nペット同伴OK・設備充実で、初めてのお泊まり旅行でも安心です。\n\n空室状況・プラン詳細はこちらから確認できます👇\n\n🔗 ${effectiveAffiliateUrl} ※PR`;
+          }
+          return {
+            ...v,
+            content: cleanContent,
+            replyContent: reply,
+          };
+        });
+
+        setVariations(sanitizedVariations);
         setActiveVariationIndex(0);
-        setEditedContent(data.variations[0].content);
+        setEditedContent(sanitizedVariations[0].content);
+        setEditedReplyContent(sanitizedVariations[0].replyContent || '');
         setGenerationSource(data.source || 'gemini');
         
         try {
@@ -217,14 +271,6 @@ export function PostGenerator({
     } finally {
       setIsGenerating(false);
     }
-  };
-
-  // Copy to clipboard
-  const handleCopy = () => {
-    if (!editedContent) return;
-    navigator.clipboard.writeText(editedContent);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
   };
 
   // Quick schedule recommendation times
@@ -261,8 +307,35 @@ export function PostGenerator({
 
     setIsSaving(true);
     try {
+      const storedAffId = typeof window !== 'undefined' ? localStorage.getItem('rakuten_affiliate_id') || '' : '';
       const effectiveAsin = detectedAsin || (isTravelMode ? 'RAKUTEN_TRAVEL' : 'B0SAMPLE10');
-      const effectiveAffiliateUrl = affiliateLink || (isTravelMode ? (urlInput.trim() || 'https://travel.rakuten.co.jp/') : generateAffiliateUrl(effectiveAsin, trackingId));
+      
+      // 成果発生用アフィリエイトURLの解決（短縮リンクまたはhb.afl.rakuten形式へ自動変換）
+      let effectiveAffiliateUrl = affiliateLink;
+      if (isTravelMode) {
+        const rawUrl = urlInput.trim() || effectiveAffiliateUrl || 'https://travel.rakuten.co.jp/';
+        effectiveAffiliateUrl = convertToRakutenAffiliateUrl(rawUrl, storedAffId);
+      } else if (!effectiveAffiliateUrl) {
+        effectiveAffiliateUrl = generateAffiliateUrl(effectiveAsin, trackingId);
+      }
+
+      // 1. メイン投稿本文からURLや#PRをサニタイズ（リンク分離を完全保証）
+      const cleanMainContent = editedContent
+        .replace(/https?:\/\/[^\s]+/g, '')
+        .replace(/#PR\b|※PR\b|\[PR\]|【PR】/g, '')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
+
+      // 2. ぶら下げリプライ本文の確定
+      let finalReplyContent = editedReplyContent.trim();
+      if (!finalReplyContent) {
+        if (isTravelMode) {
+          finalReplyContent = `愛犬と安心して泊まれるおすすめのお宿はこちら 🐾✨️\n\n【${title || 'ペットと泊まれるおすすめ宿'}】\nペット同伴OK・設備充実で、初めてのお泊まり旅行でも安心です。\n\n空室状況・プラン詳細はこちらから確認できます👇\n\n🔗 ${effectiveAffiliateUrl} ※PR`;
+        } else {
+          finalReplyContent = `てな訳で、おすすめの神アイテムはコチラ ✨️ｷﾗｯ→\n\n【${title || 'おすすめ便利アイテム'}】\n我が家でも大活躍中。使い勝手も良く耐久性・機能性抜群で、毎日の負担が一気に激減します。\n\n全飼い主に推したい。\n\n🔗 ${effectiveAffiliateUrl} ※PR`;
+        }
+      }
+
       const activeVariation = variations[activeVariationIndex];
 
       await onSavePost({
@@ -275,7 +348,9 @@ export function PostGenerator({
         target_audience: targetAudience || (isTravelMode ? '愛犬と初めて旅行する飼い主さん' : 'おすすめ読者'),
         platform,
         tone: activeVariation?.tone || 'honest_review',
-        content: editedContent,
+        content: cleanMainContent,
+        reply_content: finalReplyContent,
+        is_no_link: true,
         key_benefits: benefits.filter(b => b.trim().length > 0),
         status,
         scheduled_at: status === 'scheduled' ? (scheduledDateTime ? new Date(scheduledDateTime).toISOString() : new Date().toISOString()) : null,
@@ -287,7 +362,7 @@ export function PostGenerator({
 
       setStatusMessage(
         status === 'scheduled'
-          ? '🎉 予約投稿リストに追加しました！'
+          ? '🎉 予約投稿リストに追加しました！（メイン投稿とぶら下げリプライが登録されました）'
           : status === 'published'
           ? '✅ 投稿完了として記録しました！'
           : status === 'pending'
@@ -672,10 +747,15 @@ export function PostGenerator({
                 ))}
               </div>
 
-              {/* Editable Preview Area */}
+              {/* Editable Preview Area: 1. Main Post (No Link) */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between text-xs text-zinc-500">
-                  <span>投稿本文（直接微調整できます）</span>
+                  <span className="font-semibold text-zinc-700 dark:text-zinc-300 flex items-center gap-1.5">
+                    <span className="flex h-5 w-5 items-center justify-center rounded-full bg-emerald-100 text-[11px] font-bold text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
+                      1
+                    </span>
+                    メイン投稿（共感ストーリー・リンクなし）
+                  </span>
                   <div className="flex items-center gap-2">
                     <span
                       className={`font-mono text-xs font-semibold ${
@@ -707,25 +787,87 @@ export function PostGenerator({
                       </div>
                     </div>
                     <span className="rounded bg-zinc-200 px-1.5 py-0.5 text-[10px] font-mono text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400">
-                      {platform === 'x' ? '𝕏 ポスト' : 'Threads'}
+                      {platform === 'x' ? '𝕏 メイン親ポスト' : 'Threads 親投稿'}
                     </span>
                   </div>
 
                   {/* Textarea */}
                   <textarea
-                    rows={8}
+                    rows={7}
                     value={editedContent}
                     onChange={e => setEditedContent(e.target.value)}
                     className="w-full resize-y bg-transparent text-sm leading-relaxed text-zinc-900 focus:outline-none dark:text-zinc-100"
-                    placeholder="投稿本文がここに表示されます..."
+                    placeholder="メイン投稿本文（リンクを含めず、読者の共感とエンゲージメントを高めます）"
+                  />
+
+                  {/* No-link Notice */}
+                  <div className="mt-2 flex items-center gap-1.5 border-t border-zinc-200/60 pt-2 text-[11px] text-emerald-700 dark:border-zinc-800 dark:text-emerald-400">
+                    <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[9px] font-bold text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
+                      アルゴリズム最適化
+                    </span>
+                    <span>本文リンクなし（外部リンクペナルティを回避しインプレッション最大化）</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Editable Preview Area: 2. Reply Post (Affiliate Link + PR) */}
+              <div className="space-y-2 pt-1">
+                <div className="flex items-center justify-between text-xs text-zinc-500">
+                  <span className="font-semibold text-zinc-700 dark:text-zinc-300 flex items-center gap-1.5">
+                    <span className="flex h-5 w-5 items-center justify-center rounded-full bg-rose-100 text-[11px] font-bold text-rose-800 dark:bg-rose-950 dark:text-rose-300">
+                      2
+                    </span>
+                    自動ぶら下げリプライ（宿名＋特徴＋成果発生アフィリリンク＋#PR）
+                  </span>
+                  <span className="font-mono text-xs text-zinc-500">
+                    {editedReplyContent.length} 文字
+                  </span>
+                </div>
+
+                <div className="relative rounded-2xl border border-rose-200/70 bg-rose-50/40 p-4 transition focus-within:border-rose-500 focus-within:bg-white dark:border-rose-900/40 dark:bg-rose-950/20">
+                  <div className="mb-2 flex items-center justify-between border-b border-rose-200/50 pb-2 dark:border-rose-900/30">
+                    <div className="flex items-center gap-2 text-xs font-semibold text-rose-800 dark:text-rose-300">
+                      <MessageSquare className="h-4 w-4" />
+                      <span>{platform === 'x' ? '𝕏 返信ツリー自動投稿' : 'Threads 返信スレッド'}</span>
+                    </div>
+                    <span className="rounded bg-rose-100 px-1.5 py-0.5 text-[10px] font-bold text-rose-700 dark:bg-rose-950 dark:text-rose-300">
+                      成果発生用リンク
+                    </span>
+                  </div>
+
+                  <textarea
+                    rows={5}
+                    value={editedReplyContent}
+                    onChange={e => setEditedReplyContent(e.target.value)}
+                    className="w-full resize-y bg-transparent text-sm leading-relaxed text-zinc-900 focus:outline-none dark:text-zinc-100"
+                    placeholder="ぶら下げリプライ本文（宿名・特徴・アフィリエイトURL・#PR）"
                   />
 
                   {/* PR Tag Notice */}
-                  <div className="mt-2 flex items-center gap-1.5 border-t border-zinc-200/60 pt-2 text-[11px] text-zinc-500 dark:border-zinc-800">
-                    <span className="rounded bg-amber-100 px-1 py-0.5 text-[9px] font-bold text-amber-800 dark:bg-amber-950 dark:text-amber-300">
-                      規約遵守
-                    </span>
-                    <span>アフィリエイト広告である旨（#PR）が含まれています</span>
+                  <div className="mt-2 flex items-center justify-between border-t border-rose-200/50 pt-2 text-[11px] text-zinc-600 dark:border-rose-900/40 dark:text-zinc-400">
+                    <div className="flex items-center gap-1.5">
+                      <span className="rounded bg-amber-100 px-1 py-0.5 text-[9px] font-bold text-amber-800 dark:bg-amber-950 dark:text-amber-300">
+                        景表法・PR遵守
+                      </span>
+                      <span>成果発生用アフィリリンクと#PR表記を包含</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleCopyReply}
+                      className="text-xs font-bold text-rose-700 hover:underline flex items-center gap-1"
+                    >
+                      {copiedReply ? (
+                        <>
+                          <Check className="h-3 w-3 text-emerald-600" />
+                          <span className="text-emerald-600">コピー完了</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="h-3 w-3" />
+                          <span>リプライのみコピー</span>
+                        </>
+                      )}
+                    </button>
                   </div>
                 </div>
               </div>
@@ -740,12 +882,12 @@ export function PostGenerator({
                   {copied ? (
                     <>
                       <Check className="h-3.5 w-3.5 text-emerald-600" />
-                      <span className="text-emerald-600">コピー完了！</span>
+                      <span className="text-emerald-600">本文コピー完了！</span>
                     </>
                   ) : (
                     <>
                       <Copy className="h-3.5 w-3.5" />
-                      <span>本文コピー</span>
+                      <span>メイン本文コピー</span>
                     </>
                   )}
                 </button>

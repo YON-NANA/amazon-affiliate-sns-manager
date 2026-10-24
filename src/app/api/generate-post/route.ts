@@ -2,7 +2,8 @@ import { NextResponse } from 'next/server';
 import { GoogleGenAI } from '@google/genai';
 import { GeneratedVariation, ToneId } from '@/lib/types';
 import { appendPrDisclosure } from '@/lib/amazon';
-import { buildAffiliateReplyText } from '@/lib/pipeline';
+import { buildAffiliateReplyText, replaceReplyLinkLine } from '@/lib/reply-builder';
+import { convertToRakutenAffiliateUrl } from '@/lib/rakuten';
 
 interface RequestBody {
   asin: string;
@@ -17,18 +18,47 @@ interface RequestBody {
   includeNoLinkPost?: boolean; // アカバン防止用のリンクなし共感ポストを生成するか
   targetMode?: 'direct' | 'pattern_b_all'; // pattern_b_all: 4案すべて「本文＝純粋共感エピソード」「リプライ＝商品スペック＆リンク」
   userExemplars?: string[]; // ユーザーが過去に編集・承認したお手本ポスト（Few-Shot学習用）
+  rakutenAffiliateId?: string; // ユーザー指定の楽天アフィリエイトID
 }
 
 export async function POST(req: Request) {
   try {
     const body: RequestBody = await req.json();
-    const { asin, title, category, genre, targetAudience, affiliateUrl, platform, benefits, customNotes, includeNoLinkPost, targetMode, userExemplars } = body;
+    const {
+      asin,
+      title,
+      category,
+      genre,
+      targetAudience,
+      affiliateUrl,
+      platform,
+      benefits,
+      customNotes,
+      includeNoLinkPost,
+      targetMode,
+      userExemplars,
+      rakutenAffiliateId,
+    } = body;
 
     if (!title) {
       return NextResponse.json({ error: '商品名は必須です。' }, { status: 400 });
     }
 
     const apiKey = process.env.GEMINI_API_KEY?.trim();
+
+    // 宿・ホテル判定
+    const isTravel =
+      category === 'pet_travel' ||
+      /宿|ホテル|温泉|旅館|ヴィラ|コテージ|宿泊|トラベル|ペンション/i.test(`${title} ${category}`);
+
+    // 宿・旅行の場合は、素のURL（travel.rakuten.co.jp）が渡されても確実に楽天アフィリエイトリンクに自動変換
+    const effectiveAffiliateUrl = isTravel && affiliateUrl
+      ? convertToRakutenAffiliateUrl(affiliateUrl, rakutenAffiliateId || process.env.RAKUTEN_AFFILIATE_ID)
+      : affiliateUrl;
+
+    // 宿・旅行の場合は常に「パターンB（本文＝純粋共感エピソード、リプライ＝宿魅力＋アフィリリンク）」を強制
+    const effectiveTargetMode = isTravel ? 'pattern_b_all' : (targetMode || (includeNoLinkPost ? 'pattern_b_all' : 'direct'));
+    const effectiveIncludeNoLink = isTravel ? true : !!includeNoLinkPost;
 
     // If Gemini API Key is available, generate using Gemini
     if (apiKey && apiKey !== '【Google AI Studioで取得したGemini APIキー】' && !apiKey.startsWith('your_')) {
@@ -39,12 +69,12 @@ export async function POST(req: Request) {
           category,
           genre,
           targetAudience: targetAudience || (genre === 'pet' ? '愛犬・愛猫の飼い主' : '暮らしを快適にしたい人'),
-          affiliateUrl,
+          affiliateUrl: effectiveAffiliateUrl,
           platform,
           benefits: benefits || [],
           customNotes: customNotes || '',
-          includeNoLinkPost: !!includeNoLinkPost,
-          targetMode: targetMode || (includeNoLinkPost ? 'pattern_b_all' : 'direct'),
+          includeNoLinkPost: effectiveIncludeNoLink,
+          targetMode: effectiveTargetMode,
           userExemplars: userExemplars || [],
         });
 
@@ -66,12 +96,12 @@ export async function POST(req: Request) {
       category,
       genre,
       targetAudience: targetAudience || (genre === 'pet' ? 'ペットオーナー' : '日々の暮らしを整えたい人'),
-      affiliateUrl,
+      affiliateUrl: effectiveAffiliateUrl,
       platform,
       benefits: benefits || [],
       customNotes: customNotes || '',
-      includeNoLinkPost: !!includeNoLinkPost,
-      targetMode: targetMode || (includeNoLinkPost ? 'pattern_b_all' : 'direct'),
+      includeNoLinkPost: effectiveIncludeNoLink,
+      targetMode: effectiveTargetMode,
     });
 
     return NextResponse.json({
@@ -335,12 +365,23 @@ JSONオブジェクトのみを出力してください（Markdownコードブ�
         if (isNoLink) {
           cleanMainContent = cleanMainContent
             .replace(/https?:\/\/[^\s]+/g, '')
-            .replace(/#PR\s*/g, '')
+            .replace(/#PR\s*/gi, '')
             .replace(/👇[^\n]*\n?/g, '')
             .replace(/★\s*\d+(\.\d+)?(\s*（[^）]+）)?/g, '')
             .replace(/レビュー\s*[\d,]+件[^\n]*\n?/g, '')
             .replace(/【商品名】[^\n]*\n?/g, '')
+            .replace(/\n{3,}/g, '\n\n')
             .trim();
+        }
+
+        // リプライ本文のリンク保証（Geminiが素URLを出力した場合でも確実にアフィリリンクに置換・保証）
+        let safeReplyContent = (v.replyContent?.trim() || defaultReply);
+        if (params.affiliateUrl) {
+          safeReplyContent = replaceReplyLinkLine(
+            safeReplyContent,
+            isTravel ? 'direct_rakuten' : 'direct_rakuten',
+            params.affiliateUrl
+          );
         }
 
         return {
@@ -351,7 +392,7 @@ JSONオブジェクトのみを出力してください（Markdownコードブ�
             : (isNoLink ? '🐾 パターンB（リンク無し共感ポスト）' : idx === 0 ? 'お悩み解決型' : idx === 1 ? 'リアル愛用者型' : '共感ストーリー型')),
           headline: v.headline || (isTravel ? 'おすすめの愛犬同伴宿' : 'おすすめポイント'),
           content: isNoLink ? cleanMainContent : appendPrDisclosure(cleanMainContent),
-          replyContent: v.replyContent?.trim() || defaultReply,
+          replyContent: safeReplyContent,
           characterCount: cleanMainContent.length,
           tags: v.tags || (isTravel
             ? ['犬連れ旅行', 'ペットと泊まれる宿', '愛犬とお出かけ', 'ペットのいる暮らし']

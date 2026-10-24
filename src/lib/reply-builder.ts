@@ -22,6 +22,8 @@ export const REPLY_CLOSING_WORDS = [
   'もっと早く買えばよかった…☆ｷﾗｯ',
 ];
 
+import { convertToRakutenAffiliateUrl } from './rakuten';
+
 /**
  * リプライ欄の生成ルール（商品紹介・アフィリエイト連携時）
  * 1. 導入: 「てな訳で、おすすめの神アイテムはコチラ ✨️ｷﾗｯ→」
@@ -52,6 +54,12 @@ export function buildAffiliateReplyText(params?: {
     ? 'てな訳で、今回お邪魔した（おすすめの）神宿はコチラ ✨️ｷﾗｯ→'
     : 'てな訳で、おすすめの神アイテムはコチラ ✨️ｷﾗｯ→';
 
+  // 宿・ホテルの場合、素のURL（travel.rakuten.co.jp）が渡されても自動的にアフィリエイトリンクに変換
+  const rawTargetUrl = params?.affiliateUrl || '';
+  const effectiveAffiliateUrl = isTravel && rawTargetUrl
+    ? convertToRakutenAffiliateUrl(rawTargetUrl)
+    : rawTargetUrl;
+
   let reviewBody = '';
   let linkSection = '';
 
@@ -67,13 +75,13 @@ export function buildAffiliateReplyText(params?: {
     if (params.targetMode === 'amazon_storefront') {
       linkSection = `🔗 Amazonストアフロント: ${storefront} ※PR`;
     } else if (params.targetMode === 'room') {
-      linkSection = `🔗 楽天ROOM: ${params.affiliateUrl || room} ※PR`;
+      linkSection = `🔗 楽天ROOM: ${effectiveAffiliateUrl || room} ※PR`;
     } else if (params.targetMode === 'both') {
       linkSection = `🔗 Amazonストアフロント: ${storefront}\n🔗 楽天ROOM: ${room} ※PR`;
     } else {
       linkSection = isTravel
-        ? `🔗 楽天トラベル詳細・空室確認: ${params.affiliateUrl || room} ※PR`
-        : `🔗 ${params.affiliateUrl || storefront} ※PR`;
+        ? `🔗 楽天トラベル詳細・空室確認: ${effectiveAffiliateUrl || room} ※PR`
+        : `🔗 ${effectiveAffiliateUrl || storefront} ※PR`;
     }
   } else {
     const defaultGenreTitle = isTravel
@@ -120,9 +128,10 @@ export function replaceReplyLinkLine(
     targetLinkLine = `🔗 楽天ROOM: ${newUrl} ※PR`;
   } else {
     const isTravel = /travel\.rakuten|a\.r10\.to|hb\.afl\.rakuten/i.test(newUrl);
+    const effectiveTargetUrl = isTravel ? convertToRakutenAffiliateUrl(newUrl) : newUrl;
     targetLinkLine = isTravel
-      ? `🔗 楽天トラベル詳細・空室確認: ${newUrl} ※PR`
-      : `🔗 ${newUrl} ※PR`;
+      ? `🔗 楽天トラベル詳細・空室確認: ${effectiveTargetUrl} ※PR`
+      : `🔗 ${effectiveTargetUrl} ※PR`;
   }
 
   // 既存のリンク行（🔗 から始まる行または末尾のURL行）を検索して置換
