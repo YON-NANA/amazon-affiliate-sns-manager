@@ -62,7 +62,7 @@ export interface GeneratedVariationItem {
   isNoLink: boolean;
 }
 
-type GenreTab = 'pet' | 'camp' | 'disaster';
+type GenreTab = 'pet' | 'camp' | 'disaster' | 'travel';
 export type LinkOption = 'amazon_storefront' | 'room' | 'direct_rakuten';
 
 export function ResearchStudio({ onSavePost, onNavigateToPipeline, defaultRoomUrl, defaultStorefrontUrl }: ResearchStudioProps) {
@@ -110,8 +110,13 @@ export function ResearchStudio({ onSavePost, onNavigateToPipeline, defaultRoomUr
     const catStorefrontUrl = getStorefrontUrlForGenre(selectedGenre);
     setStorefrontUrl(catStorefrontUrl);
 
+    // 宿ジャンルの場合はデフォルトリンクを楽天直リンク（またはROOM）へ自動切り替え
+    if (selectedGenre === 'travel') {
+      setLinkOption('direct_rakuten');
+    }
+
     // このジャンルでユーザーが過去に承認・編集したお手本ポスト件数を取得
-    fetchUserExemplars(selectedGenre).then(exs => {
+    fetchUserExemplars(selectedGenre === 'travel' ? 'pet' : selectedGenre).then(exs => {
       setExemplarsCount(exs.length);
     });
   }, [selectedGenre]);
@@ -211,11 +216,18 @@ export function ResearchStudio({ onSavePost, onNavigateToPipeline, defaultRoomUr
     setSaveSuccessMsg(null);
     setIsGenerating(true);
 
-    const activeLinkOpt = overrideLinkOption || linkOption;
+    const isTravelProd = prod.genre === 'travel' || prod.category === 'pet_travel' || selectedGenre === 'travel';
+    // 宿の場合はAmazonストアフロントではなく楽天アフィリ直リンク（またはROOM）を初期推奨
+    let effectiveLinkOpt = overrideLinkOption || linkOption;
+    if (isTravelProd && effectiveLinkOpt === 'amazon_storefront') {
+      effectiveLinkOpt = 'direct_rakuten';
+      setLinkOption('direct_rakuten');
+    }
+
     let targetLink = '';
-    if (activeLinkOpt === 'amazon_storefront') {
+    if (effectiveLinkOpt === 'amazon_storefront') {
       targetLink = storefrontUrl.trim() || DEFAULT_AMAZON_STOREFRONT_URL;
-    } else if (activeLinkOpt === 'room') {
+    } else if (effectiveLinkOpt === 'room') {
       targetLink = roomUrl.trim();
     } else {
       targetLink = prod.affiliateUrl || prod.itemUrl;
@@ -223,7 +235,7 @@ export function ResearchStudio({ onSavePost, onNavigateToPipeline, defaultRoomUr
 
     try {
       // 直近のユーザー手動編集・確定ポストをお手本（Few-Shot学習用）として取得
-      const userExemplars = await fetchUserExemplars(prod.genre as any, 4);
+      const userExemplars = await fetchUserExemplars(isTravelProd ? 'pet' : (prod.genre as any), 4);
       setExemplarsCount(userExemplars.length);
 
       const res = await fetch('/api/generate-post', {
@@ -232,15 +244,21 @@ export function ResearchStudio({ onSavePost, onNavigateToPipeline, defaultRoomUr
         body: JSON.stringify({
           asin: prod.itemId,
           title: prod.title,
-          category: prod.category,
-          genre: prod.genre === 'camp' ? 'life' : (prod.genre as any),
+          category: isTravelProd ? 'pet_travel' : prod.category,
+          genre: isTravelProd ? 'pet' : (prod.genre === 'camp' ? 'life' : (prod.genre as any)),
           affiliateUrl: targetLink,
           platform: 'both',
-          benefits: [
-            `★${prod.reviewAverage}（レビュー${prod.reviewCount.toLocaleString()}件の圧倒的評価）`,
-            prod.caption?.slice(0, 80) || '売れ筋・高評価アイテム',
-            `${prod.price.toLocaleString()}円 ${prod.postageFlag === 1 ? '送料無料' : ''}`,
-          ],
+          benefits: isTravelProd
+            ? [
+                `★${prod.reviewAverage}（楽天トラベル レビュー${prod.reviewCount.toLocaleString()}件の高評価宿）`,
+                prod.caption?.slice(0, 90) || '客室温泉＆ドッグラン完備・愛犬同伴宿',
+                `参考宿泊目安: ${prod.price.toLocaleString()}円〜`,
+              ]
+            : [
+                `★${prod.reviewAverage}（レビュー${prod.reviewCount.toLocaleString()}件の圧倒的評価）`,
+                prod.caption?.slice(0, 80) || '売れ筋・高評価アイテム',
+                `${prod.price.toLocaleString()}円 ${prod.postageFlag === 1 ? '送料無料' : ''}`,
+              ],
           includeNoLinkPost: true,
           targetMode: 'pattern_b_all',
           userExemplars,
@@ -255,7 +273,7 @@ export function ResearchStudio({ onSavePost, onNavigateToPipeline, defaultRoomUr
           affiliateUrl: targetLink,
           amazonStorefront: storefrontUrl.trim() || DEFAULT_AMAZON_STOREFRONT_URL,
           rakutenRoom: roomUrl.trim(),
-          targetMode: activeLinkOpt,
+          targetMode: effectiveLinkOpt,
         });
 
         const mapped: GeneratedVariationItem[] = data.variations.map((v: any, idx: number) => {
@@ -369,8 +387,10 @@ export function ResearchStudio({ onSavePost, onNavigateToPipeline, defaultRoomUr
         affiliate_url: targetLink,
         room_url: linkOption === 'room' ? targetLink : undefined,
         affiliate_provider: linkOption === 'amazon_storefront' ? 'amazon_storefront' : linkOption === 'room' ? 'room' : 'rakuten',
-        category: selectedProduct.category,
-        target_audience: selectedGenre === 'pet' ? '40〜60代女性・ペット飼い主' : selectedGenre === 'camp' ? 'ファミリー・ソロキャンパー' : '防災備蓄を整えたい人',
+        category: (selectedGenre === 'travel' || selectedProduct.category === 'pet_travel') ? 'pet_travel' : selectedProduct.category,
+        target_audience: (selectedGenre === 'travel' || selectedProduct.category === 'pet_travel')
+          ? '愛犬と旅行したい飼い主'
+          : (selectedGenre === 'pet' ? '40〜60代女性・ペット飼い主' : selectedGenre === 'camp' ? 'ファミリー・ソロキャンパー' : '防災備蓄を整えたい人'),
         platform: 'both',
         tone: 'no_link_tips',
         content: activeVar.mainContent,
@@ -383,7 +403,9 @@ export function ResearchStudio({ onSavePost, onNavigateToPipeline, defaultRoomUr
         status,
         scheduled_at: status === 'scheduled' ? scheduledDate.toISOString() : null,
         published_at: null,
-        tags: [selectedGenre, '楽天売れ筋', '愛用品紹介'],
+        tags: (selectedGenre === 'travel' || selectedProduct.category === 'pet_travel')
+          ? ['犬連れ旅行', 'ペットと泊まれる宿', '愛犬とお出かけ', '愛用品紹介']
+          : [selectedGenre, '楽天売れ筋', '愛用品紹介'],
         is_no_link: true,
         is_user_curated: true,
         metrics: { clicks: 0 },
@@ -429,7 +451,7 @@ export function ResearchStudio({ onSavePost, onNavigateToPipeline, defaultRoomUr
           </div>
 
           {/* Genre Tabs */}
-          <div className="flex items-center gap-1.5 rounded-2xl bg-white/80 p-1.5 shadow-xs backdrop-blur-md dark:bg-zinc-800/80">
+          <div className="flex flex-wrap items-center gap-1.5 rounded-2xl bg-white/80 p-1.5 shadow-xs backdrop-blur-md dark:bg-zinc-800/80">
             <button
               onClick={() => setSelectedGenre('pet')}
               className={`flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-bold transition ${
@@ -440,6 +462,17 @@ export function ResearchStudio({ onSavePost, onNavigateToPipeline, defaultRoomUr
             >
               <span>🐾</span>
               <span>ペット用品（主軸）</span>
+            </button>
+            <button
+              onClick={() => setSelectedGenre('travel')}
+              className={`flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-bold transition ${
+                selectedGenre === 'travel'
+                  ? 'bg-gradient-to-r from-teal-600 to-cyan-600 text-white shadow-xs'
+                  : 'text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-white'
+              }`}
+            >
+              <span>🏨</span>
+              <span>ペット宿・ホテル（楽天トラベル）</span>
             </button>
             <button
               onClick={() => setSelectedGenre('camp')}
@@ -574,16 +607,16 @@ export function ResearchStudio({ onSavePost, onNavigateToPipeline, defaultRoomUr
             </span>
             <button
               type="button"
-              onClick={() => handleSwitchLinkOption('amazon_storefront')}
+              onClick={() => handleSwitchLinkOption('direct_rakuten')}
               className={`flex items-center gap-1 px-2.5 py-1 rounded-xl text-xs font-bold transition ${
-                linkOption === 'amazon_storefront'
-                  ? 'bg-amber-500 text-white shadow-xs'
+                linkOption === 'direct_rakuten'
+                  ? 'bg-teal-600 text-white shadow-xs'
                   : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
               }`}
-              title="Amazonストアフロント（shop/〇〇）へ誘導"
+              title={selectedGenre === 'travel' ? '楽天トラベル宿詳細ページへ直接誘導' : '楽天商品ページへ直接誘導'}
             >
-              <span>🛒</span>
-              <span>Amazonストアフロント</span>
+              <span>{selectedGenre === 'travel' ? '🏨' : '🔗'}</span>
+              <span>{selectedGenre === 'travel' ? '楽天トラベル直リンク' : '楽天直リンク'}</span>
             </button>
             <button
               type="button"
@@ -593,30 +626,37 @@ export function ResearchStudio({ onSavePost, onNavigateToPipeline, defaultRoomUr
                   ? 'bg-emerald-600 text-white shadow-xs'
                   : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
               }`}
-              title="楽天ROOMのコレクションへ誘導"
+              title={selectedGenre === 'travel' ? '楽天ROOMの神宿コレクション棚へ誘導' : '楽天ROOMのコレクションへ誘導'}
             >
               <span>🏠</span>
-              <span>楽天ROOM</span>
+              <span>{selectedGenre === 'travel' ? '楽天ROOM（神宿棚）' : '楽天ROOM'}</span>
             </button>
             <button
               type="button"
-              onClick={() => handleSwitchLinkOption('direct_rakuten')}
+              onClick={() => handleSwitchLinkOption('amazon_storefront')}
               className={`flex items-center gap-1 px-2.5 py-1 rounded-xl text-xs font-bold transition ${
-                linkOption === 'direct_rakuten'
-                  ? 'bg-teal-600 text-white shadow-xs'
+                linkOption === 'amazon_storefront'
+                  ? 'bg-amber-500 text-white shadow-xs'
                   : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
               }`}
-              title="楽天商品ページへ直接誘導"
+              title="Amazonストアフロント（shop/〇〇）へ誘導"
             >
-              <span>🔗</span>
-              <span>楽天直リンク</span>
+              <span>🛒</span>
+              <span>{selectedGenre === 'travel' ? 'Amazon（物販用）' : 'Amazonストアフロント'}</span>
             </button>
           </div>
         </div>
 
         <div className="flex items-center justify-between text-xs text-zinc-500">
           <span>
-            現在の誘導先: <strong className={linkOption === 'amazon_storefront' ? 'text-amber-600' : linkOption === 'room' ? 'text-emerald-600' : 'text-teal-600'}>{linkOption === 'amazon_storefront' ? '🛒 Amazonストアフロント' : linkOption === 'room' ? '🏠 楽天ROOM' : '🔗 楽天アフィリエイト直リンク'}</strong>
+            現在の誘導先:{' '}
+            <strong className={linkOption === 'amazon_storefront' ? 'text-amber-600' : linkOption === 'room' ? 'text-emerald-600' : 'text-teal-600'}>
+              {linkOption === 'amazon_storefront'
+                ? (selectedGenre === 'travel' ? '🛒 Amazonストアフロント（物販用）' : '🛒 Amazonストアフロント')
+                : linkOption === 'room'
+                ? (selectedGenre === 'travel' ? '🏠 楽天ROOM（一度は泊まりたい！愛犬同伴の神宿まとめ）' : '🏠 楽天ROOM')
+                : (selectedGenre === 'travel' ? '🏨 楽天トラベル直リンク（宿詳細）' : '🔗 楽天アフィリエイト直リンク')}
+            </strong>
           </span>
           <span>
             気になる商品の「✨️ この商品でAI作成」を押すと紹介文を即時生成できます
@@ -756,180 +796,191 @@ export function ResearchStudio({ onSavePost, onNavigateToPipeline, defaultRoomUr
               </span>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              {/* 1. Amazonストアフロント */}
-              <button
-                type="button"
-                onClick={() => handleSwitchLinkOption('amazon_storefront')}
-                className={`flex flex-col p-3 rounded-xl border text-left transition ${
-                  linkOption === 'amazon_storefront'
-                    ? 'border-amber-500 bg-amber-50/70 dark:bg-amber-950/40 text-amber-950 dark:text-amber-200 ring-2 ring-amber-500/20'
-                    : 'border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 hover:border-amber-300'
-                }`}
-              >
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold flex items-center gap-1 text-amber-900 dark:text-amber-300">
-                    <span>🛒</span> Amazonストアフロント
-                  </span>
-                  {linkOption === 'amazon_storefront' && <Check className="h-4 w-4 text-amber-600" />}
-                </div>
-                <p className="mt-1 text-[11px] text-zinc-500 dark:text-zinc-400">
-                  公式ストアフロント（shop/〇〇）へ誘導。Amazon派フォロワーのまとめ買い報酬を最大化。
-                </p>
-              </button>
+            {(() => {
+              const isCurrentTravel = selectedGenre === 'travel' || selectedProduct?.genre === 'travel' || selectedProduct?.category === 'pet_travel';
+              return (
+                <div>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    {/* 1. 楽天アフィリエイト直リンク（宿・ホテルの場合は最優先） */}
+                    <button
+                      type="button"
+                      onClick={() => handleSwitchLinkOption('direct_rakuten')}
+                      className={`flex flex-col p-3 rounded-xl border text-left transition ${
+                        linkOption === 'direct_rakuten'
+                          ? 'border-teal-500 bg-teal-50/60 dark:bg-teal-950/40 text-teal-900 dark:text-teal-200 ring-2 ring-teal-500/20'
+                          : 'border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 hover:border-teal-300'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold flex items-center gap-1 text-teal-900 dark:text-teal-300">
+                          <span>{isCurrentTravel ? '🏨' : '🔗'}</span> {isCurrentTravel ? '楽天トラベル直リンク' : '楽天アフィリ直リンク'}
+                        </span>
+                        {linkOption === 'direct_rakuten' && <Check className="h-4 w-4 text-teal-600" />}
+                      </div>
+                      <p className="mt-1 text-[11px] text-zinc-500 dark:text-zinc-400">
+                        {isCurrentTravel
+                          ? '紹介した宿の楽天トラベル詳細・空室確認ページへダイレクト遷移。今すぐ予約したい読者を直撃。'
+                          : 'セール時や単品で強烈に今すぐ買わせたい時に。商品詳細ページへダイレクト遷移。'}
+                      </p>
+                    </button>
 
-              {/* 2. 楽天ROOM */}
-              <button
-                type="button"
-                onClick={() => handleSwitchLinkOption('room')}
-                className={`flex flex-col p-3 rounded-xl border text-left transition ${
-                  linkOption === 'room'
-                    ? 'border-emerald-500 bg-emerald-50/60 dark:bg-emerald-950/40 text-emerald-900 dark:text-emerald-200 ring-2 ring-emerald-500/20'
-                    : 'border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 hover:border-emerald-300'
-                }`}
-              >
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold flex items-center gap-1 text-emerald-900 dark:text-emerald-300">
-                    <span>🏠</span> 楽天ROOMへ誘導
-                  </span>
-                  {linkOption === 'room' && <Check className="h-4 w-4 text-emerald-600" />}
-                </div>
-                <p className="mt-1 text-[11px] text-zinc-500 dark:text-zinc-400">
-                  コレクションやマイページへ誘導。見栄えが良く楽天ROOM経由のまとめ買いを最大化。
-                </p>
-              </button>
+                    {/* 2. 楽天ROOM */}
+                    <button
+                      type="button"
+                      onClick={() => handleSwitchLinkOption('room')}
+                      className={`flex flex-col p-3 rounded-xl border text-left transition ${
+                        linkOption === 'room'
+                          ? 'border-emerald-500 bg-emerald-50/60 dark:bg-emerald-950/40 text-emerald-900 dark:text-emerald-200 ring-2 ring-emerald-500/20'
+                          : 'border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 hover:border-emerald-300'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold flex items-center gap-1 text-emerald-900 dark:text-emerald-300">
+                          <span>🏠</span> {isCurrentTravel ? '楽天ROOM（神宿棚）' : '楽天ROOMへ誘導'}
+                        </span>
+                        {linkOption === 'room' && <Check className="h-4 w-4 text-emerald-600" />}
+                      </div>
+                      <p className="mt-1 text-[11px] text-zinc-500 dark:text-zinc-400">
+                        {isCurrentTravel
+                          ? '『一度は泊まりたい！愛犬同伴の神宿まとめ』コレクションへ誘導。ROOM経由の予約・まとめ買いを促進。'
+                          : 'コレクションやマイページへ誘導。見栄えが良く楽天ROOM経由のまとめ買いを最大化。'}
+                      </p>
+                    </button>
 
-              {/* 3. 楽天アフィリエイト直リンク */}
-              <button
-                type="button"
-                onClick={() => handleSwitchLinkOption('direct_rakuten')}
-                className={`flex flex-col p-3 rounded-xl border text-left transition ${
-                  linkOption === 'direct_rakuten'
-                    ? 'border-teal-500 bg-teal-50/60 dark:bg-teal-950/40 text-teal-900 dark:text-teal-200 ring-2 ring-teal-500/20'
-                    : 'border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 hover:border-teal-300'
-                }`}
-              >
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold flex items-center gap-1 text-teal-900 dark:text-teal-300">
-                    <span>🔗</span> 楽天アフィリ直リンク
-                  </span>
-                  {linkOption === 'direct_rakuten' && <Check className="h-4 w-4 text-teal-600" />}
-                </div>
-                <p className="mt-1 text-[11px] text-zinc-500 dark:text-zinc-400">
-                  セール時や単品で強烈に今すぐ買わせたい時に。商品詳細ページへダイレクト遷移。
-                </p>
-              </button>
-            </div>
-
-            {/* If Amazon Storefront selected, input storefront URL */}
-            {linkOption === 'amazon_storefront' && (
-              <div className="mt-3 p-3.5 rounded-xl border border-amber-300/80 bg-amber-50/50 dark:border-amber-900/50 dark:bg-amber-950/20 space-y-2">
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-xs font-bold text-amber-950 dark:text-amber-200 flex items-center gap-1">
-                      <span>🛒</span> 誘導先 AmazonストアフロントURL:
-                    </span>
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-900 dark:bg-amber-950/80 dark:text-amber-300 border border-amber-300 dark:border-amber-700">
-                      <span>{selectedGenre === 'pet' ? '🐶 ペット用' : selectedGenre === 'camp' ? '⛺ キャンプ用' : '🎒 防災用'}連動中</span>
-                    </span>
+                    {/* 3. Amazonストアフロント */}
+                    <button
+                      type="button"
+                      onClick={() => handleSwitchLinkOption('amazon_storefront')}
+                      className={`flex flex-col p-3 rounded-xl border text-left transition ${
+                        linkOption === 'amazon_storefront'
+                          ? 'border-amber-500 bg-amber-50/70 dark:bg-amber-950/40 text-amber-950 dark:text-amber-200 ring-2 ring-amber-500/20'
+                          : 'border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-300 hover:border-amber-300'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold flex items-center gap-1 text-amber-900 dark:text-amber-300">
+                          <span>🛒</span> Amazonストアフロント{isCurrentTravel ? '（物販用）' : ''}
+                        </span>
+                        {linkOption === 'amazon_storefront' && <Check className="h-4 w-4 text-amber-600" />}
+                      </div>
+                      <p className="mt-1 text-[11px] text-zinc-500 dark:text-zinc-400">
+                        公式ストアフロント（shop/〇〇）へ誘導。{isCurrentTravel ? '※宿紹介ではなく通常の物販推奨。' : 'Amazon派フォロワーのまとめ買い報酬を最大化。'}
+                      </p>
+                    </button>
                   </div>
-                  <span className="text-[10px] text-zinc-500 dark:text-zinc-400">
-                    カテゴリー切り替えで各専用URLが自動セットされます
-                  </span>
+
+                  {/* If Amazon Storefront selected, input storefront URL */}
+                  {linkOption === 'amazon_storefront' && (
+                    <div className="mt-3 p-3.5 rounded-xl border border-amber-300/80 bg-amber-50/50 dark:border-amber-900/50 dark:bg-amber-950/20 space-y-2">
+                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-xs font-bold text-amber-950 dark:text-amber-200 flex items-center gap-1">
+                            <span>🛒</span> 誘導先 AmazonストアフロントURL:
+                          </span>
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-900 dark:bg-amber-950/80 dark:text-amber-300 border border-amber-300 dark:border-amber-700">
+                            <span>{isCurrentTravel ? '🏨 宿紹介中（物販連動）' : selectedGenre === 'pet' ? '🐶 ペット用' : selectedGenre === 'camp' ? '⛺ キャンプ用' : '🎒 防災用'}連動中</span>
+                          </span>
+                        </div>
+                        <span className="text-[10px] text-zinc-500 dark:text-zinc-400">
+                          カテゴリー切り替えで各専用URLが自動セットされます
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          value={storefrontUrl}
+                          onChange={e => {
+                            const newUrl = e.target.value;
+                            setStorefrontUrl(newUrl);
+                            // 既存リプライ文も連動置換
+                            setVariations(prev =>
+                              prev.map(v => ({
+                                ...v,
+                                replyContent: replaceReplyLinkLine(v.replyContent, 'amazon_storefront', newUrl.trim() || DEFAULT_AMAZON_STOREFRONT_URL),
+                              }))
+                            );
+                          }}
+                          placeholder="https://www.amazon.co.jp/shop/ユーザー名"
+                          className="flex-1 rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-xs font-mono text-zinc-900 focus:border-amber-500 focus:outline-hidden dark:border-amber-800 dark:bg-zinc-900 dark:text-white"
+                        />
+                        <button
+                          type="button"
+                          onClick={handleSaveCurrentGenreStorefrontUrl}
+                          title="現在のカテゴリーのデフォルトURLとして保存"
+                          className="shrink-0 rounded-lg bg-amber-600 hover:bg-amber-700 px-3 py-1.5 text-xs font-semibold text-white shadow-2xs flex items-center gap-1 transition"
+                        >
+                          <BookmarkCheck className="h-3.5 w-3.5 text-white" />
+                          <span>このカテゴリーに保存</span>
+                        </button>
+                      </div>
+
+                      {savedCategoryStorefrontMsg && (
+                        <p className="text-[11px] text-amber-700 dark:text-amber-300 font-semibold flex items-center gap-1">
+                          <Check className="h-3.5 w-3.5" />
+                          <span>現在のカテゴリー（{isCurrentTravel ? 'ペット宿・ホテル' : selectedGenre === 'pet' ? 'ペット' : selectedGenre === 'camp' ? 'キャンプ' : '防災'}）専用AmazonストアフロントURLとして保存しました！</span>
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {/* If ROOM selected, input room URL */}
+                  {linkOption === 'room' && (
+                    <div className="mt-3 p-3.5 rounded-xl border border-emerald-300/80 bg-emerald-50/50 dark:border-emerald-900/50 dark:bg-emerald-950/20 space-y-2">
+                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-xs font-bold text-emerald-950 dark:text-emerald-200 flex items-center gap-1">
+                            <span>🏠</span> 誘導先 楽天ROOMコレクションURL:
+                          </span>
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700">
+                            <span>{isCurrentTravel ? '🏨 神宿棚（愛犬同伴の神宿まとめ）' : selectedGenre === 'pet' ? '🐶 ペット用' : selectedGenre === 'camp' ? '⛺ キャンプ用' : '🎒 防災用'}連動中</span>
+                          </span>
+                        </div>
+                        <span className="text-[10px] text-zinc-500 dark:text-zinc-400">
+                          カテゴリー切り替えで各専用URLが自動セットされます
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          value={roomUrl}
+                          onChange={e => {
+                            const newUrl = e.target.value;
+                            setRoomUrl(newUrl);
+                            // 既存リプライ文も連動置換
+                            setVariations(prev =>
+                              prev.map(v => ({
+                                ...v,
+                                replyContent: replaceReplyLinkLine(v.replyContent, 'room', newUrl.trim()),
+                              }))
+                            );
+                          }}
+                          placeholder="https://room.rakuten.co.jp/ユーザー名/items"
+                          className="flex-1 rounded-lg border border-emerald-300 bg-white px-3 py-1.5 text-xs font-mono text-zinc-900 focus:border-emerald-500 focus:outline-hidden dark:border-emerald-800 dark:bg-zinc-900 dark:text-white"
+                        />
+                        <button
+                          type="button"
+                          onClick={handleSaveCurrentGenreRoomUrl}
+                          title="現在のカテゴリーのデフォルトURLとして保存"
+                          className="shrink-0 rounded-lg bg-emerald-600 hover:bg-emerald-700 px-3 py-1.5 text-xs font-semibold text-white shadow-2xs flex items-center gap-1 transition"
+                        >
+                          <BookmarkCheck className="h-3.5 w-3.5 text-white" />
+                          <span>このカテゴリーに保存</span>
+                        </button>
+                      </div>
+
+                      {savedCategoryRoomMsg && (
+                        <p className="text-[11px] text-emerald-600 font-semibold flex items-center gap-1">
+                          <Check className="h-3.5 w-3.5" />
+                          <span>現在のカテゴリー（{isCurrentTravel ? 'ペット宿・ホテル' : selectedGenre === 'pet' ? 'ペット' : selectedGenre === 'camp' ? 'キャンプ' : '防災'}）専用ROOM URLとして保存しました！</span>
+                        </p>
+                      )}
+                    </div>
+                  )}
                 </div>
-
-                <div className="flex items-center gap-2">
-                  <input
-                    type="text"
-                    value={storefrontUrl}
-                    onChange={e => {
-                      const newUrl = e.target.value;
-                      setStorefrontUrl(newUrl);
-                      // 既存リプライ文も連動置換
-                      setVariations(prev =>
-                        prev.map(v => ({
-                          ...v,
-                          replyContent: replaceReplyLinkLine(v.replyContent, 'amazon_storefront', newUrl.trim() || DEFAULT_AMAZON_STOREFRONT_URL),
-                        }))
-                      );
-                    }}
-                    placeholder="https://www.amazon.co.jp/shop/ユーザー名"
-                    className="flex-1 rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-xs font-mono text-zinc-900 focus:border-amber-500 focus:outline-hidden dark:border-amber-800 dark:bg-zinc-900 dark:text-white"
-                  />
-                  <button
-                    type="button"
-                    onClick={handleSaveCurrentGenreStorefrontUrl}
-                    title="現在のカテゴリー（ペット/キャンプ/防災）のデフォルトURLとして保存"
-                    className="shrink-0 rounded-lg bg-amber-600 hover:bg-amber-700 px-3 py-1.5 text-xs font-semibold text-white shadow-2xs flex items-center gap-1 transition"
-                  >
-                    <BookmarkCheck className="h-3.5 w-3.5 text-white" />
-                    <span>このカテゴリーに保存</span>
-                  </button>
-                </div>
-
-                {savedCategoryStorefrontMsg && (
-                  <p className="text-[11px] text-amber-700 dark:text-amber-300 font-semibold flex items-center gap-1">
-                    <Check className="h-3.5 w-3.5" />
-                    <span>現在のカテゴリー（{selectedGenre === 'pet' ? 'ペット' : selectedGenre === 'camp' ? 'キャンプ' : '防災'}）専用AmazonストアフロントURLとして保存しました！</span>
-                  </p>
-                )}
-              </div>
-            )}
-
-            {/* If ROOM selected, input room URL */}
-            {linkOption === 'room' && (
-              <div className="mt-3 p-3.5 rounded-xl border border-emerald-300/80 bg-emerald-50/50 dark:border-emerald-900/50 dark:bg-emerald-950/20 space-y-2">
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-xs font-bold text-emerald-950 dark:text-emerald-200 flex items-center gap-1">
-                      <span>🏠</span> 誘導先 楽天ROOMコレクションURL:
-                    </span>
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700">
-                      <span>{selectedGenre === 'pet' ? '🐶 ペット用' : selectedGenre === 'camp' ? '⛺ キャンプ用' : '🎒 防災用'}連動中</span>
-                    </span>
-                  </div>
-                  <span className="text-[10px] text-zinc-500 dark:text-zinc-400">
-                    カテゴリー切り替えで各専用URLが自動セットされます
-                  </span>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <input
-                    type="text"
-                    value={roomUrl}
-                    onChange={e => {
-                      const newUrl = e.target.value;
-                      setRoomUrl(newUrl);
-                      // 既存リプライ文も連動置換
-                      setVariations(prev =>
-                        prev.map(v => ({
-                          ...v,
-                          replyContent: replaceReplyLinkLine(v.replyContent, 'room', newUrl.trim()),
-                        }))
-                      );
-                    }}
-                    placeholder="https://room.rakuten.co.jp/ユーザー名/items"
-                    className="flex-1 rounded-lg border border-emerald-300 bg-white px-3 py-1.5 text-xs font-mono text-zinc-900 focus:border-emerald-500 focus:outline-hidden dark:border-emerald-800 dark:bg-zinc-900 dark:text-white"
-                  />
-                  <button
-                    type="button"
-                    onClick={handleSaveCurrentGenreRoomUrl}
-                    title="現在のカテゴリー（ペット/キャンプ/防災）のデフォルトURLとして保存"
-                    className="shrink-0 rounded-lg bg-emerald-600 hover:bg-emerald-700 px-3 py-1.5 text-xs font-semibold text-white shadow-2xs flex items-center gap-1 transition"
-                  >
-                    <BookmarkCheck className="h-3.5 w-3.5 text-white" />
-                    <span>このカテゴリーに保存</span>
-                  </button>
-                </div>
-
-                {savedCategoryRoomMsg && (
-                  <p className="text-[11px] text-emerald-600 font-semibold flex items-center gap-1">
-                    <Check className="h-3.5 w-3.5" />
-                    <span>現在のカテゴリー（{selectedGenre === 'pet' ? 'ペット' : selectedGenre === 'camp' ? 'キャンプ' : '防災'}）専用ROOM URLとして保存しました！</span>
-                  </p>
-                )}
-              </div>
-            )}
+              );
+            })()}
           </div>
 
           {/* Generation Result Previews */}

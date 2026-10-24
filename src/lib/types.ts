@@ -8,6 +8,7 @@ export type CategoryId =
   | 'pet_dog' 
   | 'pet_care' 
   | 'pet_toy'
+  | 'pet_travel'        // ペットと泊まれる宿・ホテル（楽天トラベル）
   | 'disaster_prep'     // 防災・ポータブル電源・ソーラーパネル
   | 'water_purifier'    // 携帯浄水器・ペット配慮長期保存水（軟水）
   | 'rescue_supplies'   // 多頭保護現場厳選ヘビーユース消耗品（シーツ・消臭等）
@@ -79,6 +80,7 @@ export interface CategoryRoomUrls {
   pet?: string;
   camp?: string;
   disaster?: string;
+  travel?: string;
   general?: string;
 }
 
@@ -87,6 +89,7 @@ export interface CategoryStorefrontUrls {
   pet?: string;
   camp?: string;
   disaster?: string;
+  travel?: string;
   general?: string;
 }
 
@@ -104,7 +107,7 @@ export interface ResearchProduct {
   shopName: string;
   caption?: string;
   category: CategoryId;
-  genre: 'pet' | 'camp' | 'disaster' | 'life';
+  genre: 'pet' | 'camp' | 'disaster' | 'travel' | 'life';
   pointRate?: number;
   postageFlag?: number; // 0: 送料別, 1: 送料無料
 }
@@ -114,7 +117,7 @@ export interface ResearchPreset {
   id: string;
   name: string;
   keyword: string;
-  genre: 'pet' | 'camp' | 'disaster' | 'life';
+  genre: 'pet' | 'camp' | 'disaster' | 'travel' | 'life';
   description: string;
   badgeText?: string;
   suggestedAngle?: string;

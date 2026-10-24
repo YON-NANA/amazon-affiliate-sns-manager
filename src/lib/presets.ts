@@ -98,6 +98,14 @@ export const CATEGORIES: CategoryInfo[] = [
     popularKeywords: ['多頭飼い', '超厚型シーツ', '本気消臭', 'レスキュー現場愛用', 'コスパ最強'],
   },
   {
+    id: 'pet_travel',
+    name: 'ペットと泊まれる宿・ホテル（楽天トラベル）',
+    icon: 'Hotel',
+    genre: 'pet',
+    description: '愛犬・愛猫と一緒に泊まれる温泉宿・客室ドッグラン付きコテージ・部屋食ホテル',
+    popularKeywords: ['ペットと泊まれる宿', '客室露天風呂', 'ドッグラン付き', '部屋食', '愛犬同伴温泉', '大型犬OK'],
+  },
+  {
     id: 'camp_gear',
     name: 'キャンプ・アウトドア',
     icon: 'Tent',
@@ -239,6 +247,44 @@ export const RESEARCH_PRESETS = [
     description: '断水・下水ストップ時の最重要インフラ。便器にかぶせて固めるだけ',
     badgeText: '🚽 15年保存・100回分',
     suggestedAngle: '「水が止まっても家族全員3週間耐えられる」「生ゴミ・ペットシート廃棄にも」',
+  },
+
+  // 🏨 ペットと泊まれる宿・ホテル（楽天トラベル連携）
+  {
+    id: 'travel_nasu_resort',
+    name: '那須温泉 ペット同伴露天風呂付きリゾート',
+    keyword: '那須 ペットと泊まれる宿 客室露天風呂 ドッグラン 部屋食 温泉',
+    genre: 'travel' as const,
+    description: '広大な天然芝ドッグランと客室露天風呂。大型犬も一緒に泊まれる那須の憧れリゾート',
+    badgeText: '🏨 愛犬家リピートNo.1',
+    suggestedAngle: '「初めてのお泊まりでも部屋食だから粗相の心配ゼロ」「敷地内ドッグランで大はしゃぎ」',
+  },
+  {
+    id: 'travel_izu_ocean_view',
+    name: '伊豆高原 愛犬専用オーシャンビューホテル',
+    keyword: '伊豆高原 ペット宿 愛犬同伴専用 海が見える客室 ドッグラン 金目鯛',
+    genre: 'travel' as const,
+    description: '全室オーシャンビュー＆全館愛犬同伴OK。ペット用アメニティ完備で手ぶら旅行',
+    badgeText: '🌊 全室オーシャンビュー',
+    suggestedAngle: '「他の宿泊客もみんな愛犬家だから気兼ねゼロ」「愛犬用の豪華ご飯に大興奮」',
+  },
+  {
+    id: 'travel_karuizawa_cottage',
+    name: '軽井沢 プライベートドッグラン付きコテージ',
+    keyword: '軽井沢 ペット コテージ 貸切 ドッグラン付き 一棟貸し バーベキュー',
+    genre: 'travel' as const,
+    description: '周りを気にせず過ごせる一棟貸切コテージ。お庭全体がプライベートドッグラン',
+    badgeText: '🏡 庭付き完全プライベート',
+    suggestedAngle: '「吠え癖があっても完全貸切だから安心」「お庭で朝からノーリードで走り回れる」',
+  },
+  {
+    id: 'travel_hakone_hotspring',
+    name: '箱根温泉 愛犬と部屋食で寛ぐ老舗温泉宿',
+    keyword: '箱根 温泉 ペットと泊まれる 部屋食 露天風呂 犬用温泉',
+    genre: 'travel' as const,
+    description: '愛犬専用の足湯・温泉完備。本格会席料理をお部屋で愛犬と一緒に楽しめる極上宿',
+    badgeText: '♨️ 犬用温泉・極上部屋食',
+    suggestedAngle: '「愛犬を部屋でお留守番させずに一緒に食事できる」「温泉で毛並みツヤツヤ」',
   },
 ];
 

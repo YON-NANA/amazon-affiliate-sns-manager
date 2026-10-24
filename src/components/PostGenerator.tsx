@@ -48,6 +48,14 @@ const TARGET_PRESETS_PET = [
   'ペットのニオイを消したい人',
 ];
 
+const TARGET_PRESETS_TRAVEL = [
+  '愛犬と初めてのお泊まり旅行',
+  '客室温泉付きでゆっくり過ごしたい人',
+  '大型犬も一緒に泊まれる宿を探す人',
+  '部屋食で周りに気兼ねなく食事したい人',
+  'プライベートドッグラン付きコテージ希望',
+];
+
 export function PostGenerator({
   trackingId,
   onSavePost,
@@ -82,6 +90,13 @@ export function PostGenerator({
   // Scheduling states
   const [scheduledDateTime, setScheduledDateTime] = useState('');
 
+  // 楽天トラベルまたは楽天アフィリエイトURLの判定ヘルパー
+  const isRakutenTravelUrl = (url: string) => {
+    return /(travel\.rakuten\.co\.jp|hb\.afl\.rakuten\.co\.jp|a\.r10\.to|room\.rakuten\.co\.jp)/i.test(url);
+  };
+
+  const isTravelMode = category === 'pet_travel' || detectedAsin === 'RAKUTEN_TRAVEL' || isRakutenTravelUrl(urlInput);
+
   // Handle URL change
   useEffect(() => {
     if (!urlInput.trim()) {
@@ -89,6 +104,17 @@ export function PostGenerator({
       setAffiliateLink('');
       return;
     }
+
+    // 楽天トラベル / 楽天アフィリエイトURLの自動検出
+    if (isRakutenTravelUrl(urlInput)) {
+      setDetectedAsin('RAKUTEN_TRAVEL');
+      setAffiliateLink(urlInput.trim());
+      setGenre('pet');
+      setCategory('pet_travel');
+      return;
+    }
+
+    // Amazon URLのパース
     const result = parseAmazonInput(urlInput, trackingId);
     if (result.isValid && result.asin) {
       setDetectedAsin(result.asin);
@@ -138,11 +164,14 @@ export function PostGenerator({
   // Generate with AI
   const handleGenerate = async () => {
     if (!title.trim()) {
-      setStatusMessage('商品名を入力してください。');
+      setStatusMessage(isTravelMode ? '宿・ホテル名を入力してください。' : '商品名を入力してください。');
       return;
     }
-    const effectiveAsin = detectedAsin || 'B0SAMPLE10';
-    const effectiveAffiliateUrl = affiliateLink || generateAffiliateUrl(effectiveAsin, trackingId);
+
+    const effectiveAsin = detectedAsin || (isTravelMode ? 'RAKUTEN_TRAVEL' : 'B0SAMPLE10');
+    const effectiveAffiliateUrl = 
+      affiliateLink || 
+      (isTravelMode ? (urlInput.trim() || 'https://travel.rakuten.co.jp/') : generateAffiliateUrl(effectiveAsin, trackingId));
 
     setIsGenerating(true);
     setStatusMessage(null);
@@ -157,7 +186,7 @@ export function PostGenerator({
           title: title.trim(),
           category,
           genre,
-          targetAudience: targetAudience.trim(),
+          targetAudience: targetAudience.trim() || (isTravelMode ? '愛犬と初めて旅行する飼い主さん' : ''),
           affiliateUrl: effectiveAffiliateUrl,
           platform,
           benefits: filteredBenefits,
@@ -232,17 +261,18 @@ export function PostGenerator({
 
     setIsSaving(true);
     try {
-      const effectiveAsin = detectedAsin || 'B0SAMPLE10';
-      const effectiveAffiliateUrl = affiliateLink || generateAffiliateUrl(effectiveAsin, trackingId);
+      const effectiveAsin = detectedAsin || (isTravelMode ? 'RAKUTEN_TRAVEL' : 'B0SAMPLE10');
+      const effectiveAffiliateUrl = affiliateLink || (isTravelMode ? (urlInput.trim() || 'https://travel.rakuten.co.jp/') : generateAffiliateUrl(effectiveAsin, trackingId));
       const activeVariation = variations[activeVariationIndex];
 
       await onSavePost({
-        title: title || '無題の商品投稿',
+        title: title || (isTravelMode ? '無題の宿・ホテル投稿' : '無題の商品投稿'),
         asin: effectiveAsin,
-        amazon_url: urlInput || `https://www.amazon.co.jp/dp/${effectiveAsin}`,
+        amazon_url: isTravelMode ? (urlInput.trim() || effectiveAffiliateUrl) : (urlInput || `https://www.amazon.co.jp/dp/${effectiveAsin}`),
         affiliate_url: effectiveAffiliateUrl,
+        affiliate_provider: isTravelMode ? 'rakuten' : 'amazon',
         category,
-        target_audience: targetAudience || 'おすすめ読者',
+        target_audience: targetAudience || (isTravelMode ? '愛犬と初めて旅行する飼い主さん' : 'おすすめ読者'),
         platform,
         tone: activeVariation?.tone || 'honest_review',
         content: editedContent,
@@ -250,7 +280,7 @@ export function PostGenerator({
         status,
         scheduled_at: status === 'scheduled' ? (scheduledDateTime ? new Date(scheduledDateTime).toISOString() : new Date().toISOString()) : null,
         published_at: status === 'published' ? new Date().toISOString() : null,
-        tags: activeVariation?.tags || ['Amazonアソシエイト', 'PR'],
+        tags: activeVariation?.tags || (isTravelMode ? ['楽天トラベル', 'ペットと泊まれる宿', 'PR'] : ['Amazonアソシエイト', 'PR']),
         metrics: { clicks: 0, likes: 0, shares: 0 },
         notes: customNotes,
       });
@@ -296,14 +326,16 @@ export function PostGenerator({
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
       {/* Left Column: Form & Inputs */}
       <div className="lg:col-span-6 space-y-6">
-        {/* Amazon Input Card */}
+        {/* Amazon & Rakuten Travel Input Card */}
         <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
           <div className="mb-4 flex items-center justify-between">
             <h2 className="flex items-center gap-2 text-sm font-bold text-zinc-900 dark:text-white">
               <LinkIcon className="h-4 w-4 text-emerald-600" />
-              <span>1. Amazon商品URL または ASIN</span>
+              <span>1. {isTravelMode ? '楽天トラベル宿URL または アフィリリンク' : '商品URL または ASIN'}</span>
             </h2>
-            <span className="text-xs text-zinc-500">PA-API未利用でも即時利用可能</span>
+            <span className="text-xs text-zinc-500">
+              {isTravelMode ? '楽天トラベル・アフィリURL対応' : 'Amazon / 楽天トラベル両対応'}
+            </span>
           </div>
 
           <div className="space-y-3">
@@ -311,7 +343,11 @@ export function PostGenerator({
               <div className="relative">
                 <input
                   type="text"
-                  placeholder="https://www.amazon.co.jp/dp/B0XXXXXXXX または 10桁ASIN"
+                  placeholder={
+                    isTravelMode
+                      ? "https://travel.rakuten.co.jp/... または 楽天アフィリエイトURL (hb.afl...)"
+                      : "https://www.amazon.co.jp/dp/B0XXXXXXXX または 10桁ASIN / 楽天トラベルURL"
+                  }
                   value={urlInput}
                   onChange={e => setUrlInput(e.target.value)}
                   className="w-full rounded-xl border border-zinc-300 bg-zinc-50 px-3.5 py-2.5 text-sm transition focus:border-emerald-500 focus:bg-white focus:outline-none dark:border-zinc-700 dark:bg-zinc-800/80 dark:text-zinc-100 dark:focus:bg-zinc-900"
@@ -319,7 +355,22 @@ export function PostGenerator({
               </div>
 
               {/* ASIN & Affiliate URL detection feedback */}
-              {detectedAsin ? (
+              {detectedAsin === 'RAKUTEN_TRAVEL' ? (
+                <div className="mt-2.5 rounded-lg bg-rose-50 p-2.5 text-xs text-rose-800 dark:bg-rose-950/40 dark:text-rose-300 border border-rose-200 dark:border-rose-800 flex items-start justify-between gap-2">
+                  <div className="space-y-0.5 overflow-hidden">
+                    <p className="font-semibold flex items-center gap-1.5">
+                      <span className="inline-block h-2 w-2 rounded-full bg-rose-500 animate-ping"></span>
+                      🏨 楽天トラベル・アフィリURL検出
+                    </p>
+                    <p className="truncate text-[11px] text-rose-700 dark:text-rose-400 font-mono">
+                      誘導リンク: {affiliateLink}
+                    </p>
+                  </div>
+                  <span className="shrink-0 rounded bg-rose-600 px-1.5 py-0.5 text-[10px] font-bold text-white">
+                    楽天アフィリ連携
+                  </span>
+                </div>
+              ) : detectedAsin ? (
                 <div className="mt-2.5 rounded-lg bg-emerald-50 p-2.5 text-xs text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 flex items-start justify-between gap-2">
                   <div className="space-y-0.5 overflow-hidden">
                     <p className="font-semibold flex items-center gap-1.5">
@@ -337,19 +388,24 @@ export function PostGenerator({
               ) : urlInput.trim() ? (
                 <p className="mt-1.5 text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1">
                   <AlertCircle className="h-3 w-3" />
-                  有効なAmazon URL (dp/B0...) または10桁のASINを入力してください
+                  有効なAmazon URL (dp/B0...) または楽天トラベルURLを入力してください
                 </p>
               ) : null}
             </div>
 
-            {/* Product Title */}
+            {/* Product / Hotel Title */}
             <div>
               <label className="mb-1 block text-xs font-semibold text-zinc-700 dark:text-zinc-300">
-                商品名・アイテム概要 <span className="text-red-500">*</span>
+                {isTravelMode ? '宿・ホテル名・宿泊プラン概要' : '商品名・アイテム概要'}{' '}
+                <span className="text-red-500">*</span>
               </label>
               <input
                 type="text"
-                placeholder="例: ぶんぶんチョッパー スーパー5 みじん切り器 900ml"
+                placeholder={
+                  isTravelMode
+                    ? "例: 那須温泉 ホテルエピナール那須 テラス棟（ペット同伴専用客室）"
+                    : "例: ぶんぶんチョッパー スーパー5 みじん切り器 900ml"
+                }
                 value={title}
                 onChange={e => setTitle(e.target.value)}
                 className="w-full rounded-xl border border-zinc-300 bg-white px-3.5 py-2 text-sm transition focus:border-emerald-500 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
@@ -394,7 +450,7 @@ export function PostGenerator({
                 }`}
               >
                 <HeartPulse className="h-3.5 w-3.5" />
-                <span>ペット用品</span>
+                <span>ペット用品・宿</span>
               </button>
             </div>
           </h2>
@@ -429,14 +485,18 @@ export function PostGenerator({
             </div>
             <input
               type="text"
-              placeholder="例: 夕飯の支度を少しでも短縮したい共働き家庭"
+              placeholder={
+                isTravelMode
+                  ? "例: 初めて愛犬と旅行する人、客室温泉でゆっくりしたい家族"
+                  : "例: 夕飯の支度を少しでも短縮したい共働き家庭"
+              }
               value={targetAudience}
               onChange={e => setTargetAudience(e.target.value)}
               className="w-full rounded-xl border border-zinc-300 bg-white px-3.5 py-2 text-sm transition focus:border-emerald-500 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
             />
             {/* Quick target buttons */}
             <div className="mt-2 flex flex-wrap gap-1.5">
-              {(genre === 'pet' ? TARGET_PRESETS_PET : TARGET_PRESETS_LIFE).map(item => (
+              {(isTravelMode ? TARGET_PRESETS_TRAVEL : genre === 'pet' ? TARGET_PRESETS_PET : TARGET_PRESETS_LIFE).map(item => (
                 <button
                   key={item}
                   type="button"
@@ -453,7 +513,7 @@ export function PostGenerator({
           <div>
             <div className="mb-1.5 flex items-center justify-between">
               <label className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">
-                推しポイント・具体的なベネフィット（箇条書き）
+                {isTravelMode ? '宿の推しポイント・魅力（箇条書き）' : '推しポイント・具体的なベネフィット（箇条書き）'}
               </label>
               <button
                 type="button"
@@ -468,7 +528,15 @@ export function PostGenerator({
                 <div key={idx} className="flex gap-2">
                   <input
                     type="text"
-                    placeholder={`推しポイント ${idx + 1} (例: 8秒引くだけでみじん切り完成、丸洗いできる)`}
+                    placeholder={
+                      isTravelMode
+                        ? idx === 0
+                          ? "推しポイント 1 (例: 天然芝の広大なドッグラン完備)"
+                          : idx === 1
+                          ? "推しポイント 2 (例: 部屋食だから粗相の心配ゼロで安心)"
+                          : "推しポイント 3 (例: 客室露天風呂付きで愛犬とずっと一緒)"
+                        : `推しポイント ${idx + 1} (例: 8秒引くだけでみじん切り完成、丸洗いできる)`
+                    }
                     value={b}
                     onChange={e => updateBenefit(idx, e.target.value)}
                     className="flex-1 rounded-xl border border-zinc-300 bg-white px-3 py-1.5 text-xs transition focus:border-emerald-500 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"

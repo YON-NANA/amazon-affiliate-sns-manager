@@ -430,6 +430,7 @@ export const ROOM_URL_KEYS = {
   pet: 'rakuten_room_url_pet',
   camp: 'rakuten_room_url_camp',
   disaster: 'rakuten_room_url_disaster',
+  travel: 'rakuten_room_url_travel',
   general: 'rakuten_room_url',
 } as const;
 
@@ -441,6 +442,7 @@ export function getCategoryRoomUrls(): CategoryRoomUrls {
     pet: localStorage.getItem(ROOM_URL_KEYS.pet) || '',
     camp: localStorage.getItem(ROOM_URL_KEYS.camp) || '',
     disaster: localStorage.getItem(ROOM_URL_KEYS.disaster) || '',
+    travel: localStorage.getItem(ROOM_URL_KEYS.travel) || '',
     general: localStorage.getItem(ROOM_URL_KEYS.general) || 'https://room.rakuten.co.jp/yonnana_pet/items',
   };
 }
@@ -450,12 +452,17 @@ export function saveCategoryRoomUrls(urls: CategoryRoomUrls): void {
   if (urls.pet !== undefined) localStorage.setItem(ROOM_URL_KEYS.pet, urls.pet.trim());
   if (urls.camp !== undefined) localStorage.setItem(ROOM_URL_KEYS.camp, urls.camp.trim());
   if (urls.disaster !== undefined) localStorage.setItem(ROOM_URL_KEYS.disaster, urls.disaster.trim());
+  if (urls.travel !== undefined) localStorage.setItem(ROOM_URL_KEYS.travel, urls.travel.trim());
   if (urls.general !== undefined) localStorage.setItem(ROOM_URL_KEYS.general, urls.general.trim());
 }
 
 export function getRoomUrlForGenre(genre: string): string {
   if (typeof window === 'undefined') return 'https://room.rakuten.co.jp/yonnana_pet/items';
-  const specificKey = genre === 'pet' ? ROOM_URL_KEYS.pet : genre === 'camp' ? ROOM_URL_KEYS.camp : genre === 'disaster' ? ROOM_URL_KEYS.disaster : null;
+  const specificKey = 
+    genre === 'pet' ? ROOM_URL_KEYS.pet :
+    genre === 'camp' ? ROOM_URL_KEYS.camp :
+    genre === 'disaster' ? ROOM_URL_KEYS.disaster :
+    genre === 'travel' || genre === 'pet_travel' ? ROOM_URL_KEYS.travel : null;
   if (specificKey) {
     const specificUrl = localStorage.getItem(specificKey);
     if (specificUrl && specificUrl.trim()) return specificUrl.trim();
@@ -472,6 +479,7 @@ export const STOREFRONT_URL_KEYS = {
   pet: 'amazon_storefront_url_pet',
   camp: 'amazon_storefront_url_camp',
   disaster: 'amazon_storefront_url_disaster',
+  travel: 'amazon_storefront_url_travel',
 } as const;
 
 export const DEFAULT_AMAZON_STOREFRONT_URL = 'https://www.amazon.co.jp/shop/yonnanahogo';
@@ -485,6 +493,7 @@ export function getCategoryStorefrontUrls(): CategoryStorefrontUrls {
     pet: localStorage.getItem(STOREFRONT_URL_KEYS.pet) || '',
     camp: localStorage.getItem(STOREFRONT_URL_KEYS.camp) || '',
     disaster: localStorage.getItem(STOREFRONT_URL_KEYS.disaster) || '',
+    travel: localStorage.getItem(STOREFRONT_URL_KEYS.travel) || '',
   };
 }
 
@@ -494,11 +503,16 @@ export function saveCategoryStorefrontUrls(urls: CategoryStorefrontUrls): void {
   if (urls.pet !== undefined) localStorage.setItem(STOREFRONT_URL_KEYS.pet, urls.pet.trim());
   if (urls.camp !== undefined) localStorage.setItem(STOREFRONT_URL_KEYS.camp, urls.camp.trim());
   if (urls.disaster !== undefined) localStorage.setItem(STOREFRONT_URL_KEYS.disaster, urls.disaster.trim());
+  if (urls.travel !== undefined) localStorage.setItem(STOREFRONT_URL_KEYS.travel, urls.travel.trim());
 }
 
 export function getStorefrontUrlForGenre(genre: string): string {
   if (typeof window === 'undefined') return DEFAULT_AMAZON_STOREFRONT_URL;
-  const specificKey = genre === 'pet' ? STOREFRONT_URL_KEYS.pet : genre === 'camp' ? STOREFRONT_URL_KEYS.camp : genre === 'disaster' ? STOREFRONT_URL_KEYS.disaster : null;
+  const specificKey = 
+    genre === 'pet' ? STOREFRONT_URL_KEYS.pet :
+    genre === 'camp' ? STOREFRONT_URL_KEYS.camp :
+    genre === 'disaster' ? STOREFRONT_URL_KEYS.disaster :
+    genre === 'travel' || genre === 'pet_travel' ? STOREFRONT_URL_KEYS.travel : null;
   if (specificKey) {
     const specificUrl = localStorage.getItem(specificKey);
     if (specificUrl && specificUrl.trim()) return specificUrl.trim();
