@@ -759,14 +759,32 @@ export function PostGenerator({
                   <div className="flex items-center gap-2">
                     <span
                       className={`font-mono text-xs font-semibold ${
-                        isXOverLimit ? 'text-red-500 font-bold' : 'text-zinc-600 dark:text-zinc-400'
+                        isXOverLimit
+                          ? 'text-red-500 font-bold'
+                          : charCount > 130
+                          ? 'text-amber-500 font-bold'
+                          : charCount >= 110
+                          ? 'text-emerald-600 dark:text-emerald-400 font-bold'
+                          : 'text-zinc-600 dark:text-zinc-400'
                       }`}
                     >
                       {charCount} 文字 {platform === 'x' ? '/ 140字' : ''}
                     </span>
-                    {isXOverLimit && (
-                      <span className="text-[10px] text-red-500 bg-red-50 dark:bg-red-950/60 px-1 py-0.5 rounded">
-                        140字超過
+                    {charCount >= 110 && charCount <= 130 ? (
+                      <span className="text-[10px] text-emerald-700 bg-emerald-50 dark:bg-emerald-950/60 dark:text-emerald-300 px-1.5 py-0.5 rounded font-semibold border border-emerald-200 dark:border-emerald-800">
+                        ✨ 厳守基準内（110〜130字）
+                      </span>
+                    ) : charCount > 130 && charCount <= 140 ? (
+                      <span className="text-[10px] text-amber-700 bg-amber-50 dark:bg-amber-950/60 dark:text-amber-300 px-1.5 py-0.5 rounded font-semibold border border-amber-200 dark:border-amber-800">
+                        ⚠️ 130字超過（110〜130字推奨）
+                      </span>
+                    ) : isXOverLimit ? (
+                      <span className="text-[10px] text-red-600 bg-red-50 dark:bg-red-950/60 px-1.5 py-0.5 rounded font-bold border border-red-200 dark:border-red-800">
+                        🚨 140字超過エラー
+                      </span>
+                    ) : (
+                      <span className="text-[10px] text-zinc-500 bg-zinc-100 dark:bg-zinc-800 px-1 py-0.5 rounded">
+                        110〜130字推奨
                       </span>
                     )}
                   </div>
