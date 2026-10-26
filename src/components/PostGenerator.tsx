@@ -319,10 +319,9 @@ export function PostGenerator({
         effectiveAffiliateUrl = generateAffiliateUrl(effectiveAsin, trackingId);
       }
 
-      // 1. メイン投稿本文からURLや#PRをサニタイズ（リンク分離を完全保証）
+      // 1. メイン投稿本文からURLのみサニタイズ（プロフ誘導末尾の #PR は保持）
       const cleanMainContent = editedContent
         .replace(/https?:\/\/[^\s]+/g, '')
-        .replace(/#PR\b|※PR\b|\[PR\]|【PR】/g, '')
         .replace(/\n{3,}/g, '\n\n')
         .trim();
 
@@ -330,9 +329,9 @@ export function PostGenerator({
       let finalReplyContent = editedReplyContent.trim();
       if (!finalReplyContent) {
         if (isTravelMode) {
-          finalReplyContent = `愛犬と安心して泊まれるおすすめのお宿はこちら 🐾✨️\n\n【${title || 'ペットと泊まれるおすすめ宿'}】\nペット同伴OK・設備充実で、初めてのお泊まり旅行でも安心です。\n\n空室状況・プラン詳細はこちらから確認できます👇\n\n🔗 ${effectiveAffiliateUrl} ※PR`;
+          finalReplyContent = `【おすすめのお宿情報🐾】\n${title || '愛犬と泊まれるお宿'}\n\nペット歓迎・充実の設備で、初めてのお泊まり旅行でも安心してくつろげます🐶\n\n空室状況やプラン詳細は下記から確認できます👇\n\n🔗 ${effectiveAffiliateUrl}\n\n#PR`;
         } else {
-          finalReplyContent = `てな訳で、おすすめの神アイテムはコチラ ✨️ｷﾗｯ→\n\n【${title || 'おすすめ便利アイテム'}】\n我が家でも大活躍中。使い勝手も良く耐久性・機能性抜群で、毎日の負担が一気に激減します。\n\n全飼い主に推したい。\n\n🔗 ${effectiveAffiliateUrl} ※PR`;
+          finalReplyContent = `【愛用アイテム詳細🐾】\n${title || '愛用アイテム'}\n\n我が家でも本当に助かっているおすすめアイテムです。使い心地や耐久性も抜群で毎日の暮らしが快適に✨️\n\n詳細や口コミは下記から確認できます👇\n\n🔗 ${effectiveAffiliateUrl}\n\n#PR`;
         }
       }
 

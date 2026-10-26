@@ -120,11 +120,10 @@ export async function executeAutomatedPipeline(options: RunAutomatedOptions = {}
     apiKey,
   });
 
-  // ★フェイルセーフ：親ポスト（メイン本文）には絶対にURLや#PRを混入させない
+  // ★フェイルセーフ：親ポスト（メイン本文）には絶対にURLを混入させない（#PR表記はプロフ誘導ルールに基づき末尾に保持）
   // 暴言や規約違反リスクのある単語も確実にサニタイズ
   const sanitizedMainContent = postData.content
     .replace(/https?:\/\/[^\s]+/g, '')
-    .replace(/#PR|#pr|PR/g, '')
     .replace(/しめるぞ|ゴルァ|しばくぞ/g, '勘弁して〜！')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
@@ -159,24 +158,38 @@ export async function executeAutomatedPipeline(options: RunAutomatedOptions = {}
           postUrl: xRes.tweetUrl,
         };
 
-        // メイン投稿成功時: 2秒待機後にリプライをぶら下げる
+        // メイン投稿成功時: Xサーバーのインデックス伝播を待機（3.5秒）してリプライをぶら下げる
         if (shouldPostReply && xRes.success && xRes.tweetId && postData.replyText) {
-          try {
-            console.log(`[Pipeline] Waiting 2 seconds before posting reply to tweet ${xRes.tweetId}...`);
-            await sleep(2000); // 待機（sleep: API反映ラグ防止）
+          console.log(`[Pipeline] Waiting 3.5 seconds before posting reply to tweet ${xRes.tweetId}...`);
+          await sleep(3500); // 待機（sleep: API反映ラグ・分散DB伝播防止）
 
-            const replyRes = await executePostToX({
-              content: postData.replyText,
-              replyToTweetId: xRes.tweetId,
-              isNoLink: false,
-            });
-            if (replyRes.success) {
-              xResult.replyPostId = replyRes.tweetId;
-              console.log(`[Pipeline] X reply tree posted successfully: ${replyRes.tweetId}`);
+          let replySuccess = false;
+          let lastReplyErr = '';
+
+          for (let attempt = 1; attempt <= 2; attempt++) {
+            try {
+              const replyRes = await executePostToX({
+                content: postData.replyText,
+                replyToTweetId: xRes.tweetId,
+                isNoLink: false,
+              });
+              if (replyRes.success) {
+                xResult.replyPostId = replyRes.tweetId;
+                console.log(`[Pipeline] X reply tree posted successfully (attempt ${attempt}): ${replyRes.tweetId}`);
+                replySuccess = true;
+                break;
+              }
+            } catch (replyErr: any) {
+              lastReplyErr = replyErr.message || 'Xリプライ投稿エラー';
+              console.warn(`[Pipeline] X reply attempt ${attempt} failed:`, lastReplyErr);
+              if (attempt < 2) {
+                await sleep(2500);
+              }
             }
-          } catch (replyErr: any) {
-            console.error('[Pipeline] Failed to post reply tree to X:', replyErr);
-            xResult.replyError = replyErr.message || 'Xリプライ投稿エラー';
+          }
+
+          if (!replySuccess && lastReplyErr) {
+            xResult.replyError = lastReplyErr;
           }
         }
       } catch (e: any) {
@@ -201,30 +214,43 @@ export async function executeAutomatedPipeline(options: RunAutomatedOptions = {}
           postUrl: thRes.postUrl,
         };
 
-        // メイン投稿成功時: 2秒待機後にリプライをぶら下げる
+        // メイン投稿成功時: 3秒待機後にリプライをぶら下げる（リトライ付き）
         if (shouldPostReply && thRes.success && thRes.postId && postData.replyText) {
-          try {
-            console.log(`[Pipeline] Waiting 2 seconds before posting reply to Threads ${thRes.postId}...`);
-            await sleep(2000); // 待機（sleep: API反映ラグ防止）
+          console.log(`[Pipeline] Waiting 3 seconds before posting reply to Threads ${thRes.postId}...`);
+          await sleep(3000);
 
-            const replyRes = await executePostToThreads({
-              content: postData.replyText,
-              replyToId: thRes.postId,
-              isNoLink: false,
-            });
-            if (replyRes.success) {
-              threadsResult.replyPostId = replyRes.postId;
-              console.log(`[Pipeline] Threads reply posted successfully: ${replyRes.postId}`);
+          let replySuccess = false;
+          let lastReplyErr = '';
+
+          for (let attempt = 1; attempt <= 2; attempt++) {
+            try {
+              const replyRes = await executePostToThreads({
+                content: postData.replyText,
+                replyToId: thRes.postId,
+                isNoLink: false,
+              });
+              if (replyRes.success) {
+                threadsResult.replyPostId = replyRes.postId;
+                console.log(`[Pipeline] Threads reply posted successfully (attempt ${attempt}): ${replyRes.postId}`);
+                replySuccess = true;
+                break;
+              }
+            } catch (replyErr: any) {
+              lastReplyErr = replyErr.message || 'Threadsリプライ投稿エラー';
+              console.warn(`[Pipeline] Threads reply attempt ${attempt} failed:`, lastReplyErr);
+              if (attempt < 2) {
+                await sleep(2500);
+              }
             }
-          } catch (replyErr: any) {
-            console.error('[Pipeline] Failed to post reply tree to Threads:', replyErr);
-            threadsResult.replyError = replyErr.message || 'Threadsリプライ投稿エラー';
+          }
+
+          if (!replySuccess && lastReplyErr) {
+            threadsResult.replyError = lastReplyErr;
           }
         }
       } catch (e: any) {
         console.error('Direct PostToThreads Error:', e);
         threadsResult = { success: false, error: e.message || 'Threads投稿エラー' };
-        // メイン投稿が失敗した場合はリプライ処理をスキップ
       }
     }
   } else {

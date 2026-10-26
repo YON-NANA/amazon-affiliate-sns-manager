@@ -727,9 +727,9 @@ export async function generateAutomatedPost(params: {
 
 4. 構成ルール
 ・メイン投稿:
-  日常のほのぼのした描写・共感の一言 ＋ 最後に短くROOMへの誘導
-  （例：我が家で本当に助かっている愛用アイテムをROOMにまとめてます🐾）
-  ※メイン投稿にはURLや「#PR」を絶対に含めないでください。
+  日常のほのぼのした描写・共感の一言 ＋ 最後にプロフ誘導を入れること
+  （例：我が家の愛用アイテムはプロフのリンク（ROOM）にまとめてます🐾 #PR）
+  ※メイン投稿にはURLは含めないでください（末尾のプロフ誘導の「#PR」は必須です）。
 
 本文のみを出力してください。タイトルや解説は不要です。`;
 
@@ -751,7 +751,6 @@ export async function generateAutomatedPost(params: {
           .replace(/勘弁して〜[！!笑\s]*/g, '')
           .replace(/下僕/g, '飼い主')
           .replace(/https?:\/\/[^\s]+/g, '')
-          .replace(/#PR|#pr|PR/g, '')
           .replace(/\n{3,}/g, '\n\n')
           .trim();
 
@@ -776,55 +775,55 @@ export async function generateAutomatedPost(params: {
       }
     }
 
-    // 刈り取りフォールバックテンプレート（全角110〜130文字以内・落ち着いた優しいトーン）
+    // 刈り取りフォールバックテンプレート（全角110〜130文字以内・落ち着いた優しいトーン＋プロフ誘導#PR）
     let harvestFallbackTemplates: string[] = [];
 
     switch (productGenreInfo.genre) {
       case 'disaster_power':
         harvestFallbackTemplates = [
-          `愛犬や愛猫と暮らしているからこそ、突然の停電や災害の備えは本当に大切だなと実感しています。\n夏場のエアコンや冬の暖房など、言葉を話せない家族の安心を守る心強いお守りです。\n我が家で本当に助かっている愛用アイテムをROOMにまとめてます🐾\n大切な家族のために。`,
+          `愛犬や愛猫と暮らしているからこそ、突然の停電や災害の備えは本当に大切だなと実感しています。\n夏場のエアコンや冬の暖房など、言葉を話せない家族の安心を守る心強いお守りです。\n我が家の愛用アイテムはプロフのリンク（ROOM）にまとめてます🐾 #PR`,
         ];
         break;
 
       case 'disaster_water':
         harvestFallbackTemplates = [
-          `お散歩の帰りや日々の生活で、いつでも清潔で美味しいお水をごくごく飲んでくれる姿にホッとします。\n断水時などもしもの時にも安心なお水をたっぷり用意できる備えは欠かせませんね。\n我が家で本当に助かっている愛用アイテムをROOMにまとめてます🐾\n毎日の安心に役立ちます。`,
+          `お散歩の帰りや日々の生活で、いつでも清潔で美味しいお水をごくごく飲んでくれる姿にホッとします。\n断水時などもしもの時にも安心なお水をたっぷり用意できる備えは欠かせませんね。\n我が家の愛用アイテムはプロフのリンク（ROOM）にまとめてます🐾 #PR`,
         ];
         break;
 
       case 'disaster_general':
         harvestFallbackTemplates = [
-          `ペット用の防災グッズや日用品は、定期的に見直して使い慣れておくのが安心ですね。\nいつもそばで無防備にすやすや眠る愛犬の寝顔を見ていると、この笑顔をずっと守りたいなと思います。\n我が家で本当に助かっている愛用アイテムをROOMにまとめてます🐾\nもしもの備えに。`,
+          `ペット用の防災グッズや日用品は、定期的に見直して使い慣れておくのが安心ですね。\nいつもそばで無防備にすやすや眠る愛犬の寝顔を見ていると、この笑顔を守りたいなと思います。\n我が家の愛用アイテムはプロフのリンク（ROOM）にまとめてます🐾 #PR`,
         ];
         break;
 
       case 'pet_brush':
         harvestFallbackTemplates = [
-          `換毛期のお手入れ中、気持ちよさそうに目を細めてゴロゴロ喉を鳴らしてくれる姿が愛おしいです。\n優しく撫でるだけでふわふわの毛がすっきり整って毎日の大切なスキンシップに。\n我が家で本当に助かっている愛用アイテムをROOMにまとめてます🐾\n心地いい暮らしにぴったり。`,
+          `換毛期のお手入れ中、気持ちよさそうに目を細めてゴロゴロ喉を鳴らしてくれる姿が愛おしいです。\n優しく撫でるだけでふわふわの毛がすっきり整って、毎日の大切なスキンシップに。\n我が家の愛用アイテムはプロフのリンク（ROOM）にまとめてます🐾 #PR`,
         ];
         break;
 
       case 'pet_sheets':
         harvestFallbackTemplates = [
-          `トイレの後、すっきりした顔でトコトコ戻ってくる姿がたまらなく愛らしい我が家の日常。\n足元が濡れることもなく、いつも快適そうにくつろいでくれる姿にホッと安心しています。\n我が家で本当に助かっている愛用アイテムをROOMにまとめてます🐾\n毎日の心地いい暮らしに欠かせません。`,
+          `トイレの後、すっきりした顔でトコトコ戻ってくる姿がたまらなく愛らしい日常。\n足元が濡れることもなく、いつも快適そうにくつろいでくれる姿にホッと安心しています。\n我が家の愛用アイテムはプロフのリンク（ROOM）にまとめてます🐾 #PR`,
         ];
         break;
 
       case 'pet_water':
         harvestFallbackTemplates = [
-          `トコトコ歩いてきて、美味しそうにお水をペロペロ飲んでいる愛猫の横顔。\nいつでも新鮮で綺麗なお水をごくごく飲んでくれる姿を見るだけで、飼い主としてとても安心します。\n我が家で本当に助かっている愛用アイテムをROOMにまとめてます🐾\n毎日の健康管理に大活躍です。`,
+          `トコトコ歩いてきて、美味しそうにお水をペロペロ飲んでいる愛猫の横顔。\nいつでも新鮮で綺麗なお水をごくごく飲んでくれる姿を見るだけで、飼い主としてとても安心します。\n我が家の愛用アイテムはプロフのリンク（ROOM）にまとめてます🐾 #PR`,
         ];
         break;
 
       case 'camp_outdoor':
         harvestFallbackTemplates = [
-          `愛犬と一緒に自然の澄んだ空気を感じながら過ごす穏やかな休日。\n木漏れ日の下で気持ちよさそうに寄り添ってうとうとする姿に、心から癒やされる時間でした。\n我が家で本当に助かっている愛用アイテムをROOMにまとめてます🐾\nお出かけやお外でのくつろぎに大活躍しています。`,
+          `愛犬と一緒に自然の澄んだ空気を感じながら過ごす穏やかな休日。\n木漏れ日の下で気持ちよさそうに寄り添ってうとうとする姿に、心から癒やされるひとときでした。\n我が家の愛用アイテムはプロフのリンク（ROOM）にまとめてます🐾 #PR`,
         ];
         break;
 
       default:
         harvestFallbackTemplates = [
-          `新しいアイテムをそっと置いてみたら、すぐに気に入ってくれたようで安心しました。\n気持ちよさそうに丸くなってすやすや眠る姿を見ていると、日々の疲れも吹き飛びます。\n我が家で本当に助かっている愛用アイテムをROOMにまとめてます🐾\nうちの子の心地いい暮らしにぴったりでした。`,
+          `新しいアイテムをそっと置いてみたら、すぐに気に入ってくれたようで安心しました。\n気持ちよさそうに丸くなってすやすや眠る姿を見ていると、日々の疲れも吹き飛びます。\n我が家の愛用アイテムはプロフのリンク（ROOM）にまとめてます🐾 #PR`,
         ];
         break;
     }
@@ -846,7 +845,7 @@ export async function generateAutomatedPost(params: {
   }
 
   // 【パターンB: 育成・ノウハウ・ギブ型】
-  // メイン本文はURLなし（日常のほのぼのした描写・共感＋ROOM誘導）、リプライにリンク・PRを集約
+  // メイン本文はURLなし（日常のほのぼのした描写・共感＋プロフ誘導#PR）、リプライにリンク・PRを集約
   const replyText = buildAffiliateReplyText({
     amazonStorefront,
     rakutenRoom,
@@ -877,9 +876,9 @@ export async function generateAutomatedPost(params: {
 
 4. 構成ルール
 ・メイン投稿:
-  日常のほのぼのした描写・共感の一言 ＋ 最後に短くROOMへの誘導
-  （例：我が家で本当に助かっている愛用アイテムをROOMにまとめてます🐾）
-  ※メイン投稿にはURLや「#PR」を絶対に含めないでください。
+  日常のほのぼのした描写・共感の一言 ＋ 最後にプロフ誘導を入れること
+  （例：我が家の愛用アイテムはプロフのリンク（ROOM）にまとめてます🐾 #PR）
+  ※メイン投稿にはURLは含めないでください（末尾のプロフ誘導の「#PR」は必須です）。
 
 本文のみを出力してください。`;
 
@@ -901,7 +900,6 @@ export async function generateAutomatedPost(params: {
         .replace(/勘弁して〜[！!笑\s]*/g, '')
         .replace(/下僕/g, '飼い主')
         .replace(/https?:\/\/[^\s]+/g, '')
-        .replace(/#PR|#pr|PR/g, '')
         .replace(/\n{3,}/g, '\n\n')
         .trim();
 
@@ -924,12 +922,12 @@ export async function generateAutomatedPost(params: {
     }
   }
 
-  // 育成フォールバックテンプレート（全角110〜130文字以内厳守・優しいトーン）
+  // 育成フォールバックテンプレート（全角110〜130文字以内厳守・優しいトーン＋プロフ誘導#PR）
   const nurtureTemplates = [
-    `日頃のお手入れ中、気持ちよさそうに目を細めて喉を鳴らしてくれる姿が本当に愛おしいです。\n大好きな家族のそばで安心しきってくつろいでくれる時間が、何よりのかけがえのない癒やしですね。\n我が家で本当に助かっている愛用アイテムをROOMにまとめてます🐾\n毎日大切に使っています。`,
-    `ふかふかの居場所でお気に入りのポーズのまま、気持ちよさそうにすやすや眠る愛犬。\n無防備な可愛い寝息を聞きながら一緒に過ごすひとときは、日々の小さなしあわせそのものです。\n我が家で本当に助かっている愛用アイテムをROOMにまとめてます🐾\n心地よい毎日のために。`,
-    `トコトコ歩いてきては、足元にそっと寄り添って甘えてくれる愛らしい仕草。\n言葉は通じなくても、穏やかな瞳で見つめ合えるだけで温かい絆を感じますね。\n我が家で本当に助かっている愛用アイテムをROOMにまとめてます🐾\n大切な家族との時間をこれからも大切に。`,
-    `日頃使うアイテムを心地よいものに変えてから、うちの子も毎日とてもリラックスして過ごしています。\n家族みんなが笑顔で心地よく暮らせる空間づくりは本当に大切ですね。\n我が家で本当に助かっている愛用アイテムをROOMにまとめてます🐾\n日々の暮らしを優しく支えてくれます。`,
+    `日頃のお手入れ中、気持ちよさそうに目を細めて喉を鳴らす姿が愛おしいです。\n家族のそばで安心しきってくつろいでくれる時間が、何よりのかけがえのない癒やしですね。\n我が家の愛用アイテムはプロフのリンク（ROOM）にまとめてます🐾 #PR`,
+    `ふかふかの居場所でお気に入りのポーズのまま、気持ちよさそうにすやすや眠る愛犬。\n無防備な可愛い寝息を聞きながら一緒に過ごすひとときは、日々の小さなしあわせそのものです。\n我が家の愛用アイテムはプロフのリンク（ROOM）にまとめてます🐾 #PR`,
+    `トコトコ歩いてきては、足元にそっと寄り添って甘えてくれる愛らしい仕草。\n言葉は通じなくても、穏やかな瞳で見つめ合えるだけで温かい絆を感じますね。\n我が家の愛用アイテムはプロフのリンク（ROOM）にまとめてます🐾 #PR`,
+    `日頃使うアイテムを心地よいものに変えてから、うちの子も毎日とてもリラックスして過ごしています。\n家族みんなが笑顔で心地よく暮らせる空間づくりは本当に大切ですね。\n我が家の愛用アイテムはプロフのリンク（ROOM）にまとめてます🐾 #PR`,
   ];
 
   const chosenNurture = nurtureTemplates[Math.floor(Math.random() * nurtureTemplates.length)];
@@ -948,42 +946,62 @@ export async function generateAutomatedPost(params: {
 
 /**
  * 自動投稿メイン本文の文字数を【全角110〜130文字以内】に収めるヘルパー
+ * プロフ誘導（+ #PR）を確実に配置し、140文字超えを絶対に防止する
  */
 function enforcePipelinePostLength(text: string): string {
-  const guide = '\n我が家で本当に助かっている愛用アイテムをROOMにまとめてます🐾';
+  const guide = '\n我が家の愛用アイテムはプロフのリンク（ROOM）にまとめてます🐾 #PR';
   let target = text.trim();
 
-  if (target.length > 130) {
-    const chunks = target.split(/([。！？\n]+)/);
-    let acc = '';
-    for (let i = 0; i < chunks.length; i++) {
-      if ((acc + chunks[i]).length <= 130) {
-        acc += chunks[i];
-      } else {
-        break;
+  // プロフ誘導のフレーズが全く含まれていない場合は付与を試みる
+  if (!target.includes('プロフ')) {
+    if ((target + guide).length <= 130) {
+      target = (target + guide).trim();
+    } else {
+      const maxLead = 130 - guide.length;
+      if (maxLead > 30) {
+        target = target.slice(0, maxLead).replace(/[、,\s]+$/, '') + '…' + guide;
       }
     }
-    if (acc.trim().length >= 110) {
-      target = acc.trim();
+  }
+
+  // プロフ誘導はあるが #PR が抜けている場合は付与
+  if (!target.includes('#PR')) {
+    if ((target + ' #PR').length <= 130) {
+      target = target + ' #PR';
+    } else {
+      target = target.slice(0, 125).replace(/[、,\s]+$/, '') + ' #PR';
+    }
+  }
+
+  // 130文字を超えている場合は安全にトリミング（末尾の #PR は死守）
+  if (target.length > 130) {
+    if (target.endsWith('#PR')) {
+      const bodyPart = target.slice(0, -4).trim();
+      target = bodyPart.slice(0, 125).replace(/[、,\s]+$/, '') + ' #PR';
     } else {
       target = target.slice(0, 127).replace(/[、,\s]+$/, '') + '…';
     }
   }
 
+  // 110文字未満で短すぎる場合は共感の一言を補完
   if (target.length < 110) {
-    if (!target.includes('ROOM') && (target + guide).length <= 130) {
-      target = (target + guide).trim();
-    }
-    if (target.length < 110) {
-      const padding = '\n大切な家族との穏やかな時間を大切に過ごしたいですね🌿';
-      if ((target + padding).length <= 130) {
-        target = (target + padding).trim();
-      }
+    const padding = '\n毎日大切に使っています🌿';
+    if (target.includes('\n') && (target.length + padding.length) <= 130) {
+      const lastLineIdx = target.lastIndexOf('\n');
+      target = target.slice(0, lastLineIdx) + padding + target.slice(lastLineIdx);
+    } else if ((target + padding).length <= 130) {
+      target = (target + padding).trim();
     }
   }
 
+  // 最終安全ガード（絶対に130文字以内・140文字超え完全防止）
   if (target.length > 130) {
-    target = target.slice(0, 127).replace(/[、,\s]+$/, '') + '…';
+    if (target.includes('#PR')) {
+      const withoutPr = target.replace(/\s*#PR$/, '');
+      target = withoutPr.slice(0, 125).replace(/[、,\s]+$/, '') + ' #PR';
+    } else {
+      target = target.slice(0, 127).replace(/[、,\s]+$/, '') + '…';
+    }
   }
 
   return target;

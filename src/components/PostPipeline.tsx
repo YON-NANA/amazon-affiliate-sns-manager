@@ -54,12 +54,11 @@ export function resolvePostParts(post: Post): { mainContent: string; replyConten
     ? convertToRakutenAffiliateUrl(rawAffUrl)
     : (rawAffUrl || 'https://www.amazon.co.jp/shop/yonnanahogo');
 
-  // メイン本文のサニタイズ（リンクやPRタグの除去）
+  // メイン本文のサニタイズ（リンクのみ除去し、プロフ誘導末尾の #PR は保持）
   const shouldSeparate = isTravel || post.is_no_link || !!post.reply_content || !!urlMatch;
   const mainContent = shouldSeparate
     ? post.content
         .replace(/https?:\/\/[^\s]+/g, '')
-        .replace(/#PR\b|※PR\b|\[PR\]|【PR】/g, '')
         .replace(/\n{3,}/g, '\n\n')
         .trim()
     : post.content;
@@ -73,9 +72,9 @@ export function resolvePostParts(post: Post): { mainContent: string; replyConten
     }
   } else if (shouldSeparate) {
     if (isTravel) {
-      replyContent = `愛犬と安心して泊まれるおすすめのお宿はこちら 🐾✨️\n\n【${post.title || 'おすすめの宿'}】\nペット同伴OK・設備充実で、初めてのお泊まり旅行でも安心です。\n\n空室状況・プラン詳細はこちらから確認できます👇\n\n🔗 ${effectiveAffUrl} ※PR`;
+      replyContent = `【おすすめのお宿情報🐾】\n${post.title || '愛犬と泊まれるお宿'}\n\nペット歓迎・充実の設備で、初めてのお泊まり旅行でも安心してくつろげます🐶\n\n空室状況やプラン詳細は下記から確認できます👇\n\n🔗 ${effectiveAffUrl}\n\n#PR`;
     } else {
-      replyContent = `てな訳で、おすすめの神アイテムはコチラ ✨️ｷﾗｯ→\n\n【${post.title || 'おすすめ便利アイテム'}】\n我が家でも大活躍中。使い勝手も良く耐久性・機能性抜群で、毎日の負担が一気に激減します。\n\n全飼い主に推したい。\n\n🔗 ${effectiveAffUrl} ※PR`;
+      replyContent = `【愛用アイテム詳細🐾】\n${post.title || '愛用アイテム'}\n\n我が家でも本当に助かっているおすすめアイテムです。使い心地や耐久性も抜群で毎日の暮らしが快適に✨️\n\n詳細や口コミは下記から確認できます👇\n\n🔗 ${effectiveAffUrl}\n\n#PR`;
     }
   }
 
@@ -143,27 +142,34 @@ export function PostPipeline({
         throw new Error(data.error || 'X APIへの投稿に失敗しました');
       }
 
-      // ぶら下げリプライの自動投稿
+      // ぶら下げリプライの自動投稿（分散DB伝播待機＋リトライ付き）
       let replyTweetId: string | undefined;
 
       if (replyContent && data.tweetId) {
-        await new Promise((r) => setTimeout(r, 2000)); // API反映ラグ防止待機
-        try {
-          const replyRes = await fetch('/api/post-to-x', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              content: replyContent,
-              replyToTweetId: data.tweetId,
-              isNoLink: false,
-            }),
-          });
-          const replyData = await replyRes.json();
-          if (replyRes.ok && replyData.tweetId) {
-            replyTweetId = replyData.tweetId;
+        // 親ツイートがXの各サーバーに伝播するまで3.5秒待機
+        await new Promise((r) => setTimeout(r, 3500));
+        for (let attempt = 1; attempt <= 2; attempt++) {
+          try {
+            const replyRes = await fetch('/api/post-to-x', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                content: replyContent,
+                replyToTweetId: data.tweetId,
+                isNoLink: false,
+              }),
+            });
+            const replyData = await replyRes.json();
+            if (replyRes.ok && replyData.tweetId) {
+              replyTweetId = replyData.tweetId;
+              break;
+            }
+          } catch (reErr) {
+            console.warn(`X Reply post attempt ${attempt} failed:`, reErr);
+            if (attempt === 1) {
+              await new Promise((r) => setTimeout(r, 2500));
+            }
           }
-        } catch (reErr) {
-          console.warn('X Reply post failed:', reErr);
         }
       }
 
@@ -215,27 +221,33 @@ export function PostPipeline({
         throw new Error(data.error || 'Threads APIへの投稿に失敗しました');
       }
 
-      // ぶら下げリプライの自動投稿
+      // ぶら下げリプライの自動投稿（待機＋リトライ付き）
       let replyThreadId: string | undefined;
 
       if (replyContent && data.postId) {
-        await new Promise((r) => setTimeout(r, 2000)); // API反映ラグ防止待機
-        try {
-          const replyRes = await fetch('/api/post-to-threads', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              content: replyContent,
-              replyToId: data.postId,
-              isNoLink: false,
-            }),
-          });
-          const replyData = await replyRes.json();
-          if (replyRes.ok && replyData.postId) {
-            replyThreadId = replyData.postId;
+        await new Promise((r) => setTimeout(r, 3000));
+        for (let attempt = 1; attempt <= 2; attempt++) {
+          try {
+            const replyRes = await fetch('/api/post-to-threads', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                content: replyContent,
+                replyToId: data.postId,
+                isNoLink: false,
+              }),
+            });
+            const replyData = await replyRes.json();
+            if (replyRes.ok && replyData.postId) {
+              replyThreadId = replyData.postId;
+              break;
+            }
+          } catch (reErr) {
+            console.warn(`Threads Reply post attempt ${attempt} failed:`, reErr);
+            if (attempt === 1) {
+              await new Promise((r) => setTimeout(r, 2000));
+            }
           }
-        } catch (reErr) {
-          console.warn('Threads Reply post failed:', reErr);
         }
       }
 

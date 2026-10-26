@@ -95,17 +95,19 @@ export async function executePostToX(params: PostToXParams) {
     throw new Error('投稿本文が空です');
   }
 
-  // 1. Anti-BAN Safety Validations
-  if (!isNoLink) {
-    // Must contain #PR disclosure if it has an affiliate link
-    if (content.includes('amazon.co.jp') && !content.includes('#PR') && !content.includes('#広告')) {
-      throw new Error('【アカバン防止ガード】Amazonアフィリエイトリンクを含む投稿には「#PR」の表記が必須です。');
-    }
+  let postContent = content.trim();
+
+  // 1. Anti-BAN Safety Validations & Auto-PR Append
+  const hasAffiliate = /amazon\.co\.jp|rakuten\.co\.jp|hb\.afl\.rakuten|a\.r10\.to/i.test(postContent);
+  const hasPr = /#PR\b|※PR\b|#広告\b|\[PR\]|【PR】/i.test(postContent);
+
+  if (hasAffiliate && !hasPr) {
+    postContent = `${postContent}\n\n#PR`;
   }
 
   // X（Twitter）標準仕様: 全角140文字（280ウェイト）制限
   // 肝心な「商品URL」「#PR」「ハッシュタグ」が絶対に欠けないよう、本文のみを安全に調整
-  const finalContent = formatTweetContent(content);
+  const finalContent = formatTweetContent(postContent);
 
   // 2. Resolve Twitter API Credentials
   const appKey = credentials?.appKey || process.env.TWITTER_API_KEY || process.env.X_API_KEY;

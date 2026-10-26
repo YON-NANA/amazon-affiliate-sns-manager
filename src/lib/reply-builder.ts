@@ -44,73 +44,33 @@ export function buildAffiliateReplyText(params?: {
   const { amazonStorefront: defaultStorefront, rakutenRoom: defaultRoom } = getCatalogUrls();
   const storefront = params?.amazonStorefront || defaultStorefront;
   const room = params?.rakutenRoom || defaultRoom;
-  const closing = params?.closingWord || REPLY_CLOSING_WORDS[Math.floor(Math.random() * REPLY_CLOSING_WORDS.length)];
 
   const isTravel = /宿|ホテル|温泉|旅館|ヴィラ|コテージ|宿泊|トラベル|ペンション|pet_travel/i.test(
     `${params?.productName || ''} ${params?.categoryName || ''} ${params?.affiliateUrl || ''}`
   );
 
-  const intro = isTravel
-    ? 'てな訳で、今回お邪魔した（おすすめの）神宿はコチラ ✨️ｷﾗｯ→'
-    : 'てな訳で、おすすめの神アイテムはコチラ ✨️ｷﾗｯ→';
-
-  // 宿・ホテルの場合、素のURL（travel.rakuten.co.jp）が渡されても自動的にアフィリエイトリンクに変換
   const rawTargetUrl = params?.affiliateUrl || '';
   const effectiveAffiliateUrl = isTravel && rawTargetUrl
     ? convertToRakutenAffiliateUrl(rawTargetUrl)
     : rawTargetUrl;
 
-  let reviewBody = '';
-  let linkSection = '';
-
+  // 商品指定あり
   if (params?.productName) {
-    const cleanName = params.productName.slice(0, 32).trim();
-    const defaultReview = isTravel
-      ? '愛犬・愛猫と気兼ねなく過ごせる充実の設備とおもてなし。客室温泉やドッグラン、美味しい食事で家族みんなが笑顔になれる特別な宿です。'
-      : '耐久性と実用性に優れた高機能設計。日々の地味なストレスやお掃除の手間を劇的に軽減し、愛犬・愛猫との暮らしを救ってくれる実力派アイテムです。';
-    const review = params.reviewText ? params.reviewText.trim() : defaultReview;
-
-    reviewBody = `【${cleanName}】\n${review}\n\n${closing}`;
-
-    if (params.targetMode === 'amazon_storefront') {
-      linkSection = `🔗 Amazonストアフロント: ${storefront} ※PR`;
-    } else if (params.targetMode === 'room') {
-      linkSection = `🔗 楽天ROOM: ${effectiveAffiliateUrl || room} ※PR`;
-    } else if (params.targetMode === 'both') {
-      linkSection = `🔗 Amazonストアフロント: ${storefront}\n🔗 楽天ROOM: ${room} ※PR`;
-    } else {
-      linkSection = isTravel
-        ? `🔗 楽天トラベル詳細・空室確認: ${effectiveAffiliateUrl || room} ※PR`
-        : `🔗 ${effectiveAffiliateUrl || storefront} ※PR`;
+    const cleanName = params.productName.slice(0, 24).trim();
+    if (isTravel) {
+      return `【おすすめのお宿情報🐾】\n${cleanName}\n愛犬と安心して泊まれる充実のおもてなし宿です✨️\n\n👇空室確認・プラン詳細はこちら\n${effectiveAffiliateUrl || room}\n\n#PR #犬連れ旅行 #ペットと泊まれる宿`;
     }
-  } else {
-    const defaultGenreTitle = isTravel
-      ? '一度は泊まりたい！愛犬同伴の神宿まとめ'
-      : '愛犬・愛猫の暮らしを救う神アイテムまとめ';
-    const genreTitle = params?.categoryName
-      ? (isTravel ? params.categoryName : `愛犬・愛猫の暮らしを救う${params.categoryName}まとめ`)
-      : defaultGenreTitle;
-
-    const defaultReview = isTravel
-      ? '愛犬と一緒に泊まって本当に良かった神宿や、客室露天・プライベートドッグラン付きの安心宿をコレクションにまとめています。\n\n一生の思い出になった…☆ｷﾗｯ'
-      : '我が家のやらかし対策や日々の消耗品、命を守る備えとして実際にリピート愛用している厳選アイテムをまとめています。\n\n' + closing;
-
-    reviewBody = `【${genreTitle}】\n${defaultReview}`;
-
-    if (params?.targetMode === 'amazon_storefront') {
-      linkSection = `🔗 Amazonストアフロント: ${storefront} ※PR`;
-    } else if (params?.targetMode === 'room') {
-      linkSection = `🔗 楽天ROOM: ${room} ※PR`;
-    } else {
-      linkSection = `🔗 Amazonストアフロント: ${storefront}\n🔗 楽天ROOM: ${room} ※PR`;
-    }
+    const targetUrl = effectiveAffiliateUrl || room;
+    return `【愛用アイテム詳細🐾】\n${cleanName}\n日々の暮らしがぐっと快適になるおすすめグッズです✨️\n\n👇詳細・お買い物はこちら\n${targetUrl}\n\n#PR #買ってよかった #ペットのいる暮らし`;
   }
 
-  let fullReply = `${intro}\n\n${reviewBody}\n\n${linkSection}`.trim();
-  if (!fullReply.includes('※PR') && !fullReply.includes('#PR') && !fullReply.includes('#広告')) {
-    fullReply = `${fullReply} ※PR`;
+  // カタログ・まとめ型（商品未指定・育成モード時）
+  if (isTravel) {
+    return `【愛犬同伴の神宿まとめ🐾】\n愛犬と一緒に泊まって本当に良かった安心のお宿をコレクションにまとめています✨️\n\n👇楽天トラベル厳選宿はこちら\n${room}\n\n#PR #犬連れ旅行 #ペットと泊まれる宿`;
   }
-  return fullReply;
+
+  // 物販（楽天ROOM中心・プロフリンク対応）
+  return `【愛用アイテムまとめ🐾】\n我が家で本当に助かっている愛用グッズをコレクションにまとめています✨️\n\n👇愛用アイテム一覧はこちら（楽天ROOM）\n${room}\n\n#PR #買ってよかった #ペットのいる暮らし`;
 }
 
 /**
