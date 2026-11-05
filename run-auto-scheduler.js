@@ -1,63 +1,58 @@
 /**
- * スタンドアロン 完全自動化パイプライン 定期実行スケジューラー
- * 
+ * スタンドアロン 計画型・セット制 定期実行スケジューラー（2026-11-06 改訂ルール版）
+ *
  * 使い方:
  * node run-auto-scheduler.js
- * 
- * 指定したインターバル（デフォルト: 4時間ごと、または刈り取り時間に合わせて）で
- * 完全自動化パイプライン（日時判定 ➔ 高単価選定 ➔ 写真添付 ➔ X/Threads投下）を実行します。
+ *
+ * 1日1回（24時間ごと）に確認済み投稿セットのストックを確認し、
+ * 未使用セットがある場合のみ1セット投稿して「使用済み」にします。
+ * 未使用セットが無い日は投稿をスキップします（使い回し・自動生成は一切しません）。
  */
 
-const API_ENDPOINT = 'http://localhost:3001/api/pipeline/run-automated';
-const CHECK_INTERVAL_MINUTES = 30; // 30分ごとに時刻をチェック
+const API_ENDPOINT = 'http://localhost:3000/api/pipeline/run-automated';
+const CHECK_INTERVAL_HOURS = 24; // 1日1回スケジュール
 
-async function runAutoPilot() {
+async function runPlannedSetPost() {
   const now = new Date();
-  console.log(`\n[${now.toLocaleString('ja-JP')}] 🚀 完全自動化パイプラインのチェックを開始します...`);
+  console.log(`\n[${now.toLocaleString('ja-JP')}] 📋 計画型・セット制 自動投稿チェックを開始します...`);
 
   try {
-    // 1. 現在のモード判定を取得
     const statusRes = await fetch(API_ENDPOINT);
     const statusData = await statusRes.json();
-    
+
     if (!statusData.success) {
       console.error('ステータス取得失敗:', statusData);
       return;
     }
 
-    const { modeInfo } = statusData;
-    console.log(`現在の判定: [${modeInfo.mode === 'harvest' ? '🔥 刈り取り' : '🌱 育成'}] ${modeInfo.formattedTime}`);
-    console.log(`理由: ${modeInfo.reason}`);
+    const { stockStatus } = statusData;
+    console.log(`現在のストック状況: 未使用 ${stockStatus?.unusedCount ?? 0} セット / 使用済み ${stockStatus?.usedCount ?? 0} セット`);
 
-    // 2. パイプラインを実行
-    console.log('パイプラインを実行中（商品選定・記事生成・写真添付・SNS投下）...');
+    if (!stockStatus || stockStatus.unusedCount === 0) {
+      console.log('⏸️ 未使用セットが0件のため、本日の投稿をスキップしました（使い回し・自動生成禁止ルール適用）。');
+      return;
+    }
+
+    console.log('確認済みセットの投稿を実行中...');
     const runRes = await fetch(API_ENDPOINT, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        dryRun: false, // 実際に投下
+        dryRun: false,
       }),
     });
 
     const runData = await runRes.json();
-    if (runData.success && runData.result) {
-      console.log('✅ 自動投稿完了！');
-      console.log('----------------------------------------------------');
-      console.log(`モード: ${runData.result.mode === 'harvest' ? '🔥 刈り取り' : '🌱 育成'}`);
-      if (runData.result.selectedProduct) {
-        console.log(`選定商品: ${runData.result.selectedProduct.name} (¥${runData.result.selectedProduct.price.toLocaleString()} / ★${runData.result.selectedProduct.rating})`);
-        console.log(`選定理由: ${runData.highPriceStats?.selectionReason}`);
-      }
-      if (runData.result.attachedMedia) {
-        console.log(`添付写真: ${runData.result.attachedMedia.filename}`);
-      }
-      console.log('投稿本文:\n' + runData.result.content);
-      console.log('----------------------------------------------------');
-      if (runData.result.xResult?.success) {
-        console.log(`𝕏 投稿URL: ${runData.result.xResult.postUrl}`);
-      }
-      if (runData.result.threadsResult?.success) {
-        console.log(`Threads 投稿URL: ${runData.result.threadsResult.postUrl}`);
+    if (runData.success) {
+      if (runData.skipped) {
+        console.log(`⏸️ スキップ: ${runData.message}`);
+      } else {
+        console.log('✅ 確認済みセットの自動投稿完了！');
+        console.log('----------------------------------------------------');
+        console.log(`セット: ${runData.result?.topicTitle}`);
+        console.log(`添付メディア: ${runData.result?.attachedMedia?.filename}`);
+        console.log(`残り未使用在庫: ${runData.result?.remainingUnusedCount} セット`);
+        console.log('----------------------------------------------------');
       }
     } else {
       console.error('実行エラー:', runData.error || runData);
@@ -67,18 +62,15 @@ async function runAutoPilot() {
   }
 }
 
-// 初回即時実行フラグ（--now が引数にあれば即時実行）
 if (process.argv.includes('--now')) {
-  runAutoPilot();
+  runPlannedSetPost();
 } else {
   console.log(`\n======================================================`);
-  console.log(`🤖 Amazonアソシエイト SNS完全自動巡回スケジューラー 起動`);
-  console.log(`- 監視インターバル: ${CHECK_INTERVAL_MINUTES} 分ごと`);
-  console.log(`- 水曜・金曜・日曜 (20:00〜23:00): 🔥 高単価アソシエイトURL＋#PR投下`);
-  console.log(`- 上記以外の平日・日中: 🌱 役立つ知恵袋・共感ノウハウ（リンク無・スパム回避）`);
-  console.log(`※今すぐテスト実行したい場合は: node run-auto-scheduler.js --now`);
+  console.log(`📋 Threads／X 計画型・セット制 スケジューラー（1日1回）`);
+  console.log(`- 事前に本人が確認した「メディア＋文章」のセットのみ投稿`);
+  console.log(`- 未使用セットが無い日は自動でスキップ（使い回し・自動生成禁止）`);
+  console.log(`※今すぐ実行したい場合は: node run-auto-scheduler.js --now`);
   console.log(`======================================================\n`);
-  
-  // 定期実行ループ
-  setInterval(runAutoPilot, CHECK_INTERVAL_MINUTES * 60 * 1000);
+
+  setInterval(runPlannedSetPost, CHECK_INTERVAL_HOURS * 60 * 60 * 1000);
 }

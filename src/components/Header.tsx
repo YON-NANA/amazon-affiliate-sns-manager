@@ -39,14 +39,14 @@ export function Header({
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-base font-bold tracking-tight text-zinc-900 dark:text-white sm:text-lg">
-                暮らし & ペット用品 Amazon アフィリエイト
+                Threads／X 計画型セット投稿マネージャー
               </h1>
-              <span className="rounded-full bg-purple-100 px-2 py-0.5 text-xs font-black text-purple-800 dark:bg-purple-950/80 dark:text-purple-300">
-                🚀 完全自動化
+              <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-black text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300">
+                📋 2026-11-06 改訂ルール版
               </span>
             </div>
             <p className="text-xs text-zinc-500 dark:text-zinc-400 hidden sm:block">
-              刈り取り/育成日時自動判定 ✕ 高単価★4以上自動選定 ✕ 写真自動添付 ✕ X/Threads投下
+              本人確認済みセット制（メディア＋文章）✕ 再使用・水増し禁止 ✕ 在庫切れ時自動スキップ ✕ 1日1回配信
             </p>
           </div>
         </div>
@@ -87,17 +87,17 @@ export function Header({
 
         {/* Navigation Tabs */}
         <div className="flex items-center gap-1 sm:gap-1.5 flex-wrap justify-end">
-          {/* 🚀 完全自動化タブ (最重要看板) */}
+          {/* 📋 計画型・セット管理タブ (最重要看板) */}
           <button
             onClick={() => setActiveTab('autopilot')}
             className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-black transition sm:text-sm shadow-xs ${
               activeTab === 'autopilot'
-                ? 'bg-gradient-to-r from-purple-600 via-indigo-600 to-blue-600 text-white shadow-purple-500/30'
-                : 'border border-purple-200 bg-purple-50/70 text-purple-800 hover:bg-purple-100 dark:border-purple-900/50 dark:bg-purple-950/30 dark:text-purple-300'
+                ? 'bg-gradient-to-r from-emerald-600 via-teal-600 to-indigo-600 text-white shadow-emerald-500/30'
+                : 'border border-emerald-200 bg-emerald-50/70 text-emerald-800 hover:bg-emerald-100 dark:border-emerald-900/50 dark:bg-emerald-950/30 dark:text-emerald-300'
             }`}
           >
-            <Zap className="h-4 w-4 text-amber-400 fill-amber-400 animate-pulse" />
-            <span>🚀 完全自動化</span>
+            <Zap className="h-4 w-4 text-amber-300 fill-amber-300" />
+            <span>📋 セット投稿管理</span>
           </button>
 
           {/* 🔍 売れ筋リサーチ・棚並べ */}

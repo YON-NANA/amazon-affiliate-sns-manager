@@ -1,58 +1,60 @@
 import { NextResponse } from 'next/server';
 import { executeAutomatedPipeline, validateCronAuth, RunAutomatedOptions } from '@/lib/pipeline-executor';
-import { checkPipelineMode, selectRandomStockMedia } from '@/lib/pipeline';
+import { getAllPostSets, getProfileHpSettings } from '@/lib/post-sets';
 
 // Vercel Serverless Function タイムアウト対策 (最大60秒)
 export const maxDuration = 60;
 
 /**
  * GET /api/cron/post
- * Vercel Cron（または外部監視サービス・Webhook）からの定期トリガー用エンドポイント
- * - Authorization: Bearer <CRON_SECRET> ヘッダーによる認証ガード
- * - クエリパラメータ ?cron_key=<CRON_SECRET> にも対応
+ * 計画型・セット制 1日1回自動投稿エンドポイント
+ * - 未使用セットがある場合のみ1セット投稿し「使用済み」にする
+ * - 未使用セットが無い日は投稿をスキップする（使い回し・自動生成は一切しない）
  */
 export async function GET(req: Request) {
   try {
     const url = new URL(req.url);
     const authHeader = req.headers.get('authorization');
-    const isCronTrigger = authHeader?.startsWith('Bearer ') || url.searchParams.get('trigger') === 'cron' || !!url.searchParams.get('cron_key');
+    const isCronTrigger =
+      authHeader?.startsWith('Bearer ') ||
+      url.searchParams.get('trigger') === 'cron' ||
+      !!url.searchParams.get('cron_key');
 
-    // 認証ガードチェック
     const auth = validateCronAuth(req);
     if (!auth.authorized) {
       return NextResponse.json({ error: auth.reason || 'Unauthorized' }, { status: 401 });
     }
 
-    // Cronトリガー、またはクエリ指定時の自動パイプライン実行
     if (isCronTrigger) {
-      console.log('⏰ [Cron Trigger: /api/cron/post] Running automated pipeline...');
-      const forceModeParam = url.searchParams.get('mode') as any;
-      const forceTimeSlotParam = url.searchParams.get('slot') as any;
+      console.log('⏰ [Cron Trigger: /api/cron/post] Running planned set pipeline (1/day)...');
       const dryRunParam = url.searchParams.get('dry_run') === 'true';
 
       const executionResult = await executeAutomatedPipeline({
-        forceMode: forceModeParam,
-        forceTimeSlot: forceTimeSlotParam,
         dryRun: dryRunParam,
       });
 
       return NextResponse.json(executionResult);
     }
 
-    // パラメータなし通常アクセスの場合はステータス＆次回配信枠情報を返却
-    const modeInfo = checkPipelineMode();
-    const sampleMedia = selectRandomStockMedia();
+    // パラメータなし通常アクセスの場合はストック在庫ステータスを返却
+    const sets = getAllPostSets();
+    const unusedSets = sets.filter(s => s.status === 'unused');
+    const usedSets = sets.filter(s => s.status === 'used');
+    const profileSettings = getProfileHpSettings();
 
     return NextResponse.json({
       status: 'active',
+      ruleVersion: '2026-11-06 改訂版（計画型・セット制）',
       endpoint: '/api/cron/post',
-      modeInfo,
-      sampleStockMedia: sampleMedia ? {
-        filename: sampleMedia.filename,
-        publicUrl: sampleMedia.publicUrl,
-      } : null,
-      currentTimeJST: modeInfo.formattedTime,
-      instructions: 'Vercel Cronから叩かれると完全自動投稿が実行されます。手動テストは ?trigger=cron&cron_key=<CRON_SECRET> で実行可能。',
+      schedule: '1日1回（未使用セット在庫が尽きたら自動スキップ）',
+      stockStatus: {
+        unusedCount: unusedSets.length,
+        usedCount: usedSets.length,
+        nextSet: unusedSets[0] || null,
+      },
+      profileSettings,
+      instructions:
+        '事前に本人が確認した「メディア＋文章」の未使用セットから1日1回投稿します。未使用セットが無い日は自動的にスキップされます。',
     });
   } catch (error: any) {
     console.error('[/api/cron/post Error]:', error);
@@ -62,7 +64,7 @@ export async function GET(req: Request) {
 
 /**
  * POST /api/cron/post
- * 管理画面や外部からの手動・強制・カスタム実行
+ * 管理画面からの手動実行・ドライラン確認
  */
 export async function POST(req: Request) {
   try {
@@ -77,7 +79,7 @@ export async function POST(req: Request) {
   } catch (error: any) {
     console.error('POST /api/cron/post Error:', error);
     return NextResponse.json({
-      error: error.message || '完全自動化パイプラインの実行中にエラーが発生しました',
+      error: error.message || '計画型セット投稿パイプラインの実行中にエラーが発生しました',
     }, { status: 500 });
   }
 }

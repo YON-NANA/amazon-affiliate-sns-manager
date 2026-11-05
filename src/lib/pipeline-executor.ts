@@ -1,22 +1,24 @@
+import path from 'path';
+import { getAppBaseUrl } from '@/lib/pipeline';
 import {
-  checkPipelineMode,
-  selectRandomStockMedia,
-  selectHighPriceProduct,
-  generateAutomatedPost,
-} from '@/lib/pipeline';
-import { AutomatedExecutionResult, CandidateProduct, PipelineMode, TimeSlot } from '@/lib/types';
+  getNextUnusedPostSet,
+  markPostSetAsUsed,
+  getAllPostSets,
+  getProfileHpSettings,
+} from '@/lib/post-sets';
+import { AutomatedExecutionResult, PipelineMode, TimeSlot } from '@/lib/types';
 import { executePostToX } from '@/app/api/post-to-x/route';
 import { executePostToThreads } from '@/app/api/post-to-threads/route';
 
 export interface RunAutomatedOptions {
-  forceMode?: PipelineMode; // 手動テスト・強制実行用 ('harvest' | 'nurture')
-  forceTimeSlot?: TimeSlot; // 手動テスト用の時間帯スロット
+  setId?: string; // 特定の未使用セットを指定して投稿する場合
+  forceMode?: PipelineMode;
+  forceTimeSlot?: TimeSlot;
   genre?: 'life' | 'pet';
   customKeyword?: string;
   customMediaDir?: string;
-  dryRun?: boolean; // テスト実行用（実際のSNS投下をスキップするか）
+  dryRun?: boolean; // テスト実行用（実際のSNS投下および「使用済み」化をスキップするか）
   platform?: 'both' | 'x' | 'threads';
-  postReplyTree?: boolean; // XのリプライツリーとしてカタログURLを自動投下するか (デフォルト: false でコスト抑制)
 }
 
 /**
@@ -26,8 +28,7 @@ export interface RunAutomatedOptions {
  */
 export function validateCronAuth(req: Request): { authorized: boolean; reason?: string } {
   const cronSecret = process.env.CRON_SECRET?.trim();
-  
-  // CRON_SECRETが未設定の場合は開発環境または未設定とみなし通過（警告ログ出力）
+
   if (!cronSecret) {
     console.log('[Cron Auth] CRON_SECRET is not configured. Allowing execution.');
     return { authorized: true };
@@ -44,7 +45,6 @@ export function validateCronAuth(req: Request): { authorized: boolean; reason?: 
     return { authorized: true };
   }
 
-  // ローカル開発環境 (localhost) での管理画面からの呼び出しは許可
   const host = req.headers.get('host') || '';
   if (host.includes('localhost') || host.includes('127.0.0.1')) {
     return { authorized: true };
@@ -54,248 +54,177 @@ export function validateCronAuth(req: Request): { authorized: boolean; reason?: 
 }
 
 /**
- * 自動投稿パイプラインの中核実行ロジック
- * - 日本の生活リズム（朝・昼・夜）に応じたテーマ・キーワード選定
- * - Amazonストアフロント（防災系）／楽天ROOM（消耗品系）／個別アフィリエイトURLの自動ルーティング
- * - X（140文字制限・安全トリミング）＋Threads（500文字）への同時・個別配信
+ * 2026-11-06 改訂版：計画型・セット制 自動投稿パイプライン
+ * - 事前に本人が確認した「メディア（写真・動画）＋文章」のセット単位でのみ投稿を行う
+ * - ツール側でメディアと文章を別々に選んで組み合わせること・AIで似た文章を自動生成することは禁止
+ * - 未使用セットが無い日は投稿をスキップする（使い回しで埋めない）
+ * - 投稿本文・リプライにアフィリエイトリンクや楽天ROOMのリンクを付けない（例外時は先頭にPR明記）
+ * - 一度投稿したセットは「使用済み」とし、同じ文章・同じメディアを再投稿しない
  */
 export async function executeAutomatedPipeline(options: RunAutomatedOptions = {}) {
   const {
-    forceMode,
-    forceTimeSlot,
-    genre: requestedGenre,
-    customKeyword,
-    customMediaDir,
+    setId,
     dryRun = false,
     platform = 'both',
-    postReplyTree = false,
   } = options;
 
-  const apiKey = process.env.GEMINI_API_KEY?.trim();
-  const trackingId = process.env.AMAZON_TRACKING_ID || process.env.NEXT_PUBLIC_AMAZON_TRACKING_ID || 'kurashitools-22';
+  // 1. ストックから次回の「未使用 (unused)」かつルール適合のセットを1件取得
+  const nextInfo = getNextUnusedPostSet(setId);
+  const profileSettings = getProfileHpSettings();
 
-  // 1. 投稿モードと時間帯スロットの自動判定ロジック
-  const modeInfo = checkPipelineMode();
-  const effectiveMode: PipelineMode = forceMode || modeInfo.mode;
-  const effectiveTimeSlot: TimeSlot = forceTimeSlot || modeInfo.timeSlot;
+  // 未使用セットが無い日は投稿をスキップ（使い回し・自動生成は一切しない）
+  if (!nextInfo.set) {
+    const skipResult: AutomatedExecutionResult = {
+      id: `skip_${Date.now()}`,
+      executedAt: new Date().toISOString(),
+      skipped: true,
+      skipReason: nextInfo.skipReason || '未使用セットが無いため本日の投稿をスキップしました。',
+      remainingUnusedCount: 0,
+      mode: 'nurture',
+      modeReason: '【計画型・セット制】未使用セット在庫切れのため自動スキップ（使い回し・自動生成禁止）',
+      topicTitle: '投稿スキップ（未使用セット在庫なし）',
+      genre: 'pet',
+      content: '',
+      isNoLink: true,
+    };
 
-  const modeReason = forceMode
-    ? `【強制実行モード】手動指定により「${forceMode === 'harvest' ? '刈り取り' : '育成'}」で実行`
-    : modeInfo.reason;
+    console.log(`[Planned Pipeline] Skipped posting: ${skipResult.skipReason}`);
 
-  // ジャンル決定（ペット優先、または指定値）
-  const effectiveGenre: 'life' | 'pet' = requestedGenre || 'pet';
-
-  let selectedProduct: CandidateProduct | undefined;
-  let highPriceStats: any = null;
-
-  // 2. 高単価商品・厳選アイテムの自動選定（刈り取りモード時）
-  if (effectiveMode === 'harvest') {
-    // 時間帯ごとのテーマキーワード（指定がなければ時間帯スロットの推奨ワードを使用）
-    const defaultKeyword = customKeyword || modeInfo.suggestedKeyword;
-
-    const highPriceResult = await selectHighPriceProduct({
-      keyword: defaultKeyword,
-      genre: effectiveGenre,
-      trackingId,
-      apiKey,
-    });
-
-    selectedProduct = highPriceResult.selected;
-    highPriceStats = {
-      candidatesTotal: highPriceResult.candidatesTotal,
-      highRatedCount: highPriceResult.filteredCandidates.length,
-      selectionReason: highPriceResult.selectionReason,
-      allCandidates: highPriceResult.allCandidates,
+    return {
+      success: true,
+      skipped: true,
+      message: skipResult.skipReason,
+      result: skipResult,
+      stockStatus: {
+        unusedCount: nextInfo.unusedCount,
+        usedCount: nextInfo.usedCount,
+      },
+      profileSettings,
     };
   }
 
-  // 3. 記事本文と導線URL（個別・カタログ・リプライ用）の自動生成
-  const postData = await generateAutomatedPost({
-    mode: effectiveMode,
-    timeSlot: effectiveTimeSlot,
-    genre: effectiveGenre,
-    selectedProduct,
-    trackingId,
-    apiKey,
-  });
+  const targetSet = nextInfo.set;
+  const baseMediaDir = path.join(process.cwd(), 'public', 'media-stock');
+  const absoluteMediaPath = path.join(baseMediaDir, targetSet.mediaFilename);
+  const baseUrl = getAppBaseUrl();
+  const publicMediaUrl = targetSet.mediaUrl || `${baseUrl}/media-stock/${encodeURIComponent(targetSet.mediaFilename)}`;
 
-  // ★フェイルセーフ：親ポスト（メイン本文）には絶対にURLを混入させない（#PR表記はプロフ誘導ルールに基づき末尾に保持）
-  // 暴言や規約違反リスクのある単語も確実にサニタイズ
-  const sanitizedMainContent = postData.content
-    .replace(/https?:\/\/[^\s]+/g, '')
-    .replace(/しめるぞ|ゴルァ|しばくぞ/g, '勘弁して〜！')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
-
-  // 4. 写真ストックフォルダ／CDN公開URLからの自動画像選定
-  const chosenMedia = selectRandomStockMedia(customMediaDir);
-
-  // 運用ルール徹底：メイン本文にはリンクを置かず（isNoLink: true）、
-  // 100%リプライ欄にアフィリエイトリンク・カタログをぶら下げる
-  const shouldPostReply = Boolean(postData.replyText);
-
-  // 5. SNS自動投下（X & Threads）※メイン成功後にリプライを自動投稿
-  let xResult: { success: boolean; postId?: string; postUrl?: string; replyPostId?: string; replyError?: string; error?: string } = { success: false };
-  let threadsResult: { success: boolean; postId?: string; postUrl?: string; replyPostId?: string; replyError?: string; error?: string } = { success: false };
-
-  // 待機用スリープヘルパー（API側の反映ラグ防止）
-  const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+  let xResult: { success: boolean; postId?: string; postUrl?: string; error?: string } = { success: false };
+  let threadsResult: { success: boolean; postId?: string; postUrl?: string; error?: string } = { success: false };
 
   if (!dryRun) {
-    // 5-1. X (Twitter) へ直接投下
+    // 2-1. X (Twitter) へ確認済みセット（メディア＋X用文章）を投稿（※リプライは一切付けない）
     if (platform === 'both' || platform === 'x') {
       try {
         const xRes = await executePostToX({
-          content: sanitizedMainContent,
-          isNoLink: true,
-          mediaPath: chosenMedia?.absolutePath,
-          mediaUrl: chosenMedia?.publicUrl,
+          content: targetSet.textX,
+          isNoLink: !targetSet.hasExceptionAffiliateLink,
+          hasExceptionAffiliateLink: targetSet.hasExceptionAffiliateLink,
+          mediaPath: absoluteMediaPath,
+          mediaUrl: publicMediaUrl,
         });
         xResult = {
           success: xRes.success,
           postId: xRes.tweetId,
           postUrl: xRes.tweetUrl,
         };
-
-        // メイン投稿成功時: Xサーバーのインデックス伝播を待機（3.5秒）してリプライをぶら下げる
-        if (shouldPostReply && xRes.success && xRes.tweetId && postData.replyText) {
-          console.log(`[Pipeline] Waiting 3.5 seconds before posting reply to tweet ${xRes.tweetId}...`);
-          await sleep(3500); // 待機（sleep: API反映ラグ・分散DB伝播防止）
-
-          let replySuccess = false;
-          let lastReplyErr = '';
-
-          for (let attempt = 1; attempt <= 2; attempt++) {
-            try {
-              const replyRes = await executePostToX({
-                content: postData.replyText,
-                replyToTweetId: xRes.tweetId,
-                isNoLink: false,
-              });
-              if (replyRes.success) {
-                xResult.replyPostId = replyRes.tweetId;
-                console.log(`[Pipeline] X reply tree posted successfully (attempt ${attempt}): ${replyRes.tweetId}`);
-                replySuccess = true;
-                break;
-              }
-            } catch (replyErr: any) {
-              lastReplyErr = replyErr.message || 'Xリプライ投稿エラー';
-              console.warn(`[Pipeline] X reply attempt ${attempt} failed:`, lastReplyErr);
-              if (attempt < 2) {
-                await sleep(2500);
-              }
-            }
-          }
-
-          if (!replySuccess && lastReplyErr) {
-            xResult.replyError = lastReplyErr;
-          }
-        }
       } catch (e: any) {
-        console.error('Direct PostToX Error:', e);
+        console.error('Planned Set PostToX Error:', e);
         xResult = { success: false, error: e.message || 'X投稿エラー' };
-        // メイン投稿が失敗した場合はリプライ処理をスキップ
       }
     }
 
-    // 5-2. Threads へ直接投下
+    // 2-2. Threads へ確認済みセット（メディア＋Threads用文章）を投稿（※リプライは一切付けない）
     if (platform === 'both' || platform === 'threads') {
       try {
         const thRes = await executePostToThreads({
-          content: sanitizedMainContent,
-          isNoLink: true,
-          mediaPath: chosenMedia?.absolutePath,
-          imageUrl: chosenMedia?.publicUrl,
+          content: targetSet.textThreads,
+          isNoLink: !targetSet.hasExceptionAffiliateLink,
+          hasExceptionAffiliateLink: targetSet.hasExceptionAffiliateLink,
+          mediaPath: absoluteMediaPath,
+          imageUrl: publicMediaUrl,
+          mediaType: targetSet.mediaType,
         });
         threadsResult = {
           success: thRes.success,
           postId: thRes.postId,
           postUrl: thRes.postUrl,
         };
-
-        // メイン投稿成功時: 3秒待機後にリプライをぶら下げる（リトライ付き）
-        if (shouldPostReply && thRes.success && thRes.postId && postData.replyText) {
-          console.log(`[Pipeline] Waiting 3 seconds before posting reply to Threads ${thRes.postId}...`);
-          await sleep(3000);
-
-          let replySuccess = false;
-          let lastReplyErr = '';
-
-          for (let attempt = 1; attempt <= 2; attempt++) {
-            try {
-              const replyRes = await executePostToThreads({
-                content: postData.replyText,
-                replyToId: thRes.postId,
-                isNoLink: false,
-              });
-              if (replyRes.success) {
-                threadsResult.replyPostId = replyRes.postId;
-                console.log(`[Pipeline] Threads reply posted successfully (attempt ${attempt}): ${replyRes.postId}`);
-                replySuccess = true;
-                break;
-              }
-            } catch (replyErr: any) {
-              lastReplyErr = replyErr.message || 'Threadsリプライ投稿エラー';
-              console.warn(`[Pipeline] Threads reply attempt ${attempt} failed:`, lastReplyErr);
-              if (attempt < 2) {
-                await sleep(2500);
-              }
-            }
-          }
-
-          if (!replySuccess && lastReplyErr) {
-            threadsResult.replyError = lastReplyErr;
-          }
-        }
       } catch (e: any) {
-        console.error('Direct PostToThreads Error:', e);
+        console.error('Planned Set PostToThreads Error:', e);
         threadsResult = { success: false, error: e.message || 'Threads投稿エラー' };
       }
     }
+
+    // 3. 投稿成功時、セットを「使用済み (used)」に更新し、二度と再投稿されないようにロック
+    const anySuccess =
+      (platform === 'both' && (xResult.success || threadsResult.success)) ||
+      (platform === 'x' && xResult.success) ||
+      (platform === 'threads' && threadsResult.success);
+
+    if (anySuccess) {
+      markPostSetAsUsed(targetSet.id, {
+        xPostId: xResult.postId,
+        xPostUrl: xResult.postUrl,
+        threadsPostId: threadsResult.postId,
+        threadsPostUrl: threadsResult.postUrl,
+      });
+    }
   } else {
+    // ドライラン（テスト確認用：SNS投下も使用済み化もしない）
     xResult = {
       success: true,
       postId: 'dry_run_x',
-      postUrl: 'https://x.com (テスト実行)',
-      replyPostId: shouldPostReply ? 'dry_run_x_reply' : undefined,
+      postUrl: 'https://x.com (ドライラン確認・未投下)',
     };
     threadsResult = {
       success: true,
       postId: 'dry_run_th',
-      postUrl: 'https://threads.net (テスト実行)',
-      replyPostId: shouldPostReply ? 'dry_run_th_reply' : undefined,
+      postUrl: 'https://threads.net (ドライラン確認・未投下)',
     };
   }
+
+  const allSetsAfter = getAllPostSets();
+  const remainingUnusedCount = allSetsAfter.filter(s => s.status === 'unused').length;
+  const usedCountAfter = allSetsAfter.filter(s => s.status === 'used').length;
 
   const executionResult: AutomatedExecutionResult = {
     id: `exec_${Date.now()}`,
     executedAt: new Date().toISOString(),
-    timeSlot: effectiveTimeSlot,
-    mode: effectiveMode,
-    modeReason,
-    topicTitle: postData.title,
-    genre: effectiveGenre,
-    content: postData.content,
-    replyText: postData.replyText,
-    catalogUrls: postData.catalogUrls,
-    isNoLink: postData.isNoLink,
-    selectedProduct,
-    affiliateUrl: postData.affiliateUrl,
-    attachedMedia: chosenMedia ? {
-      filename: chosenMedia.filename,
-      localPath: chosenMedia.absolutePath,
-      publicUrl: chosenMedia.publicUrl,
-    } : undefined,
+    skipped: false,
+    usedSet: {
+      ...targetSet,
+      status: dryRun ? targetSet.status : 'used',
+      publishedAt: dryRun ? targetSet.publishedAt : new Date().toISOString(),
+    },
+    remainingUnusedCount,
+    mode: 'nurture',
+    modeReason: `【計画型・セット制】分類タグ「${targetSet.tag}」の確認済みセットを配信（残り未使用在庫: ${remainingUnusedCount}件）`,
+    topicTitle: targetSet.title || `【${targetSet.tag}】${targetSet.mediaFilename}`,
+    genre: 'pet',
+    content: targetSet.textX,
+    contentThreads: targetSet.textThreads,
+    isNoLink: !targetSet.hasExceptionAffiliateLink,
+    attachedMedia: {
+      filename: targetSet.mediaFilename,
+      localPath: absoluteMediaPath,
+      publicUrl: publicMediaUrl,
+    },
     xResult,
     threadsResult,
   };
 
   return {
     success: true,
-    message: dryRun ? '【テスト実行完了】SNS投下はスキップされました' : '完全自動化パイプラインの実行が完了しました！',
+    skipped: false,
+    message: dryRun
+      ? '【ドライラン確認完了】セット内容の検証に成功しました（実際のSNS投下および使用済み更新は行っていません）'
+      : `確認済みセット「${targetSet.title || targetSet.mediaFilename}」を投稿し、「使用済み」に更新しました（残り在庫: ${remainingUnusedCount}セット）`,
     result: executionResult,
-    highPriceStats,
-    modeInfo,
+    stockStatus: {
+      unusedCount: remainingUnusedCount,
+      usedCount: usedCountAfter,
+    },
+    profileSettings,
   };
 }

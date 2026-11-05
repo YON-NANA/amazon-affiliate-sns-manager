@@ -195,17 +195,63 @@ export interface CandidateProduct {
   reason?: string;
 }
 
+// ==========================================
+// 2026-11-06 改訂版：計画型・セット制 投稿ルール用モデル
+// ==========================================
+
+export type PostSetTag = '暮らし・共感' | '宿紹介' | 'その他';
+
+export type PostSetStatus = 'unused' | 'used';
+
+export interface PostSet {
+  id: string;
+  title?: string; // 管理用メモ（任意）
+  mediaFilename: string; // public/media-stock/ 内のファイル名（写真または動画）
+  mediaType: 'image' | 'video';
+  mediaUrl?: string; // 表示・配信用URL
+  textThreads: string; // Threads用投稿文
+  textX: string; // X用投稿文（Threadsと同じ場合は同文面）
+  tag: PostSetTag; // 分類タグ（暮らし・共感／宿紹介／その他）
+  status: PostSetStatus; // 状態（unused: 未使用 ／ used: 使用済み）
+  publishedAt: string | null; // 投稿日時（未使用時は null）
+  // 宿紹介時の必須確認項目
+  isPetConditionVerified?: boolean; // ペット同伴条件を1軒ずつ確認済みか
+  reviewSourceCitation?: string; // 「泊まった人の声」の出典メモ
+  // 例外的にアフィリエイトリンクを含む場合（先頭に「PR」明記必須）
+  hasExceptionAffiliateLink?: boolean;
+  // 配信結果ログ
+  xPostId?: string;
+  xPostUrl?: string;
+  threadsPostId?: string;
+  threadsPostUrl?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ProfileHpSettings {
+  hpUrl: string; // HPのURL（未定時は仮置き、確定後に差し替え）
+  isHpUrlConfirmed: boolean;
+  profileBioThreads: string;
+  profileBioX: string;
+  updatedAt: string;
+}
+
 // 自動パイプラインの1回ごとの実行ログ・結果
 export interface AutomatedExecutionResult {
   id: string;
   executedAt: string;
+  skipped?: boolean; // 未使用セットが無い日にスキップされた場合 true
+  skipReason?: string;
+  usedSet?: PostSet; // 投稿に使用されたセット
+  remainingUnusedCount?: number; // 残りの未使用セット在庫数
   timeSlot?: TimeSlot;
   mode: PipelineMode;
   modeReason: string;
   topicTitle: string;
   genre: 'life' | 'pet';
   content: string;
-  replyText?: string; // リプライツリー用テキスト（カタログ・ストアフロント誘導）
+  contentThreads?: string;
+  replyText?: string; // ※改訂ルールによりリプライは使用しない（互換性のため型のみ維持）
   catalogUrls?: {
     amazonStorefront?: string;
     rakutenRoom?: string;

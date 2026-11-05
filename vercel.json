@@ -1,15 +1,7 @@
 {
   "crons": [
     {
-      "path": "/api/cron/post?trigger=cron&slot=morning",
-      "schedule": "30 22 * * *"
-    },
-    {
-      "path": "/api/cron/post?trigger=cron&slot=noon",
-      "schedule": "15 3 * * *"
-    },
-    {
-      "path": "/api/cron/post?trigger=cron&slot=night",
+      "path": "/api/cron/post?trigger=cron",
       "schedule": "30 11 * * *"
     }
   ]
