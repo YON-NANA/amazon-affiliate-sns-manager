@@ -13,12 +13,12 @@ export interface PostSetsStore {
 }
 
 const DEFAULT_PROFILE_SETTINGS: ProfileHpSettings = {
-  hpUrl: 'https://example.com/hp-pending',
-  isHpUrlConfirmed: false,
+  hpUrl: 'https://pet-kurashi.vercel.app',
+  isHpUrlConfirmed: true,
   profileBioThreads:
-    '愛犬・愛猫との穏やかな日常と、ペットと暮らす日々の工夫を綴っています🐾\nペットと泊まれる宿や暮らしのまとめは下記HPからどうぞ🌿',
+    '愛犬・愛猫との穏やかな日常と、ペットと暮らす日々の工夫を綴っています🐾\nペットと泊まれる宿や暮らしのまとめは下記HP（ペットと愉しい暮らし）からどうぞ🌿',
   profileBioX:
-    '愛犬・愛猫との穏やかな日常と、ペットと暮らす日々の工夫🐾\nペットと泊まれる宿・暮らしのまとめはHPに掲載しています🌿',
+    '愛犬・愛猫との穏やかな日常と、ペットと暮らす日々の工夫🐾\nペットと泊まれる宿・暮らしのまとめはHP（ペットと愉しい暮らし）に掲載しています🌿',
   updatedAt: new Date().toISOString(),
 };
 
